@@ -197,7 +197,11 @@
             <form id="form-insumo-usado">
               <div class="form-grid">
                 <div><label class="form-label">Fecha</label><input required type="date" name="fecha" class="form-input" /></div>
-                <div><label class="form-label">Insumo</label><select required name="insumoId" class="form-input select-insumo"></select></div>
+                <div>
+                  <label class="form-label">Insumo</label>
+                  <input type="text" class="form-input insumo-search mb-1" placeholder="🔍 Buscar insumo..." autocomplete="off" />
+                  <select required name="insumoId" class="form-input select-insumo"></select>
+                </div>
                 <div><label class="form-label">Almacén</label><select required name="almacenOrigen" class="form-input select-almacen"></select></div>
                 <div><label class="form-label">Cantidad</label><input required type="number" min="1" name="cantidad" class="form-input" /></div>
                 <div><label class="form-label">Responsable</label><input required type="text" name="responsable" class="form-input" /></div>
@@ -401,9 +405,21 @@
         </div>
 
         <div id="panel-existencias" class="subtab-panel space-y-3">
-          <div class="flex items-center justify-between no-print">
-            <label class="form-label !mb-0">Filtrar por almacén:</label>
-            <select id="stock-filtro-almacen" class="form-input !w-56"></select>
+          <div class="flex flex-wrap items-end justify-between gap-2 no-print">
+            <div>
+              <label class="form-label !mb-0">Buscar insumo:</label>
+              <input type="text" id="stock-buscar" placeholder="🔍 Nombre o categoría..." class="form-input !w-64" />
+            </div>
+            <div>
+              <label class="form-label !mb-0">Filtrar por almacén:</label>
+              <select id="stock-filtro-almacen" class="form-input !w-56"></select>
+            </div>
+          </div>
+          <div id="stock-solo-criticos-wrap" class="no-print">
+            <label class="inline-flex items-center gap-2 text-sm text-slate-600">
+              <input type="checkbox" id="stock-solo-criticos" />
+              Mostrar solo insumos bajo el mínimo crítico
+            </label>
           </div>
           <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto">
             <table class="min-w-full text-sm">
@@ -431,6 +447,10 @@
             </div>
             <div class="form-actions"><button type="submit" class="btn-primary">Agregar insumo</button></div>
           </form>
+          <div class="flex items-center justify-between">
+            <input type="text" id="insumos-catalogo-buscar" placeholder="🔍 Buscar insumo o categoría..." class="form-input !w-72" />
+            <span id="insumos-catalogo-count" class="text-xs text-slate-400"></span>
+          </div>
           <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto">
             <table class="min-w-full text-sm">
               <thead class="bg-slate-50 text-slate-600"><tr><th class="text-left font-medium px-4 py-2">Insumo</th><th class="text-left font-medium px-4 py-2">Categoría</th><th class="text-left font-medium px-4 py-2">Estado</th><th class="text-left font-medium px-4 py-2 no-print">Acciones</th></tr></thead>
@@ -444,7 +464,11 @@
             <h3 class="font-semibold text-slate-700 mb-2">Registrar entrada (donación / compra)</h3>
             <div class="form-grid">
               <div><label class="form-label">Fecha</label><input required type="date" name="fecha" class="form-input" /></div>
-              <div><label class="form-label">Insumo</label><select required name="insumoId" class="form-input select-insumo"></select></div>
+              <div>
+                <label class="form-label">Insumo</label>
+                <input type="text" class="form-input insumo-search mb-1" placeholder="🔍 Buscar insumo..." autocomplete="off" />
+                <select required name="insumoId" class="form-input select-insumo"></select>
+              </div>
               <div><label class="form-label">Cantidad recibida</label><input required type="number" min="1" name="cantidad" class="form-input" /></div>
               <div><label class="form-label">Ubicación de destino</label><select required name="almacenDestino" class="form-input select-almacen"></select></div>
               <div><label class="form-label">Responsable</label><input required type="text" name="responsable" class="form-input" /></div>
@@ -460,7 +484,11 @@
             <h3 class="font-semibold text-slate-700 mb-2">Registrar transferencia entre stocks</h3>
             <div class="form-grid">
               <div><label class="form-label">Fecha</label><input required type="date" name="fecha" class="form-input" /></div>
-              <div><label class="form-label">Insumo</label><select required name="insumoId" class="form-input select-insumo"></select></div>
+              <div>
+                <label class="form-label">Insumo</label>
+                <input type="text" class="form-input insumo-search mb-1" placeholder="🔍 Buscar insumo..." autocomplete="off" />
+                <select required name="insumoId" class="form-input select-insumo"></select>
+              </div>
               <div><label class="form-label">Stock origen</label><select required name="stockOrigen" class="form-input select-almacen"></select></div>
               <div><label class="form-label">Stock destino</label><select required name="stockDestino" class="form-input select-almacen"></select></div>
               <div><label class="form-label">Cantidad transferida</label><input required type="number" min="1" name="cantidad" class="form-input" /></div>
@@ -476,7 +504,11 @@
             <h3 class="font-semibold text-slate-700 mb-2">Registrar débito (salida / consumo)</h3>
             <div class="form-grid">
               <div><label class="form-label">Fecha</label><input required type="date" name="fecha" class="form-input" /></div>
-              <div><label class="form-label">Insumo</label><select required name="insumoId" class="form-input select-insumo"></select></div>
+              <div>
+                <label class="form-label">Insumo</label>
+                <input type="text" class="form-input insumo-search mb-1" placeholder="🔍 Buscar insumo..." autocomplete="off" />
+                <select required name="insumoId" class="form-input select-insumo"></select>
+              </div>
               <div><label class="form-label">Almacén</label><select required name="almacenOrigen" class="form-input select-almacen"></select></div>
               <div><label class="form-label">Cantidad</label><input required type="number" min="1" name="cantidad" class="form-input" /></div>
               <div><label class="form-label">Motivo</label><select required name="motivo" class="form-input select-motivo-debito"></select></div>

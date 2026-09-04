@@ -39,7 +39,7 @@ import {
 import { COLLECTIONS, ALMACENES, MOTIVOS_DEBITO_INVENTARIO } from "./config.js";
 import { subscribeCollection, createRecord, deleteRecord } from "./data.js";
 import { getCategoriasInsumos, onCategoriasInsumosChange } from "./catalogos.js";
-import { toast, confirmDialog, createHistorial, formatDate, parseLocalDate } from "./ui.js";
+import { toast, confirmDialog, createHistorial, formatDate, parseLocalDate, escapeHTML } from "./ui.js";
 import { isAdmin, getCurrentUser, getResponsableLabel } from "./auth.js";
 
 let insumos = [];
@@ -72,10 +72,15 @@ export function initInventario() {
 
   populateAlmacenSelects();
   populateMotivoDebitoSelect();
+  setupInsumoSearchInputs();
   setupInsumoForm();
   setupEntradaForm();
   setupTransferenciaForm();
   setupDebitoForm();
+
+  document.getElementById("stock-buscar")?.addEventListener("input", renderStockTable);
+  document.getElementById("stock-solo-criticos")?.addEventListener("change", renderStockTable);
+  document.getElementById("insumos-catalogo-buscar")?.addEventListener("input", renderInsumosTable);
 
   subscribeCollection(COLLECTIONS.INSUMOS, "nombre", (rows) => {
     insumos = rows;
@@ -190,12 +195,52 @@ function populateCategoriaInsumoSelect() {
   sel.innerHTML = `<option value="">Seleccione categoría...</option>` + cats.map((c) => `<option value="${c.id}" data-nombre="${c.nombre}">${c.nombre}</option>`).join("");
 }
 
+/**
+ * Arma las <option> de un <select> de insumo, agrupadas por categoría
+ * (<optgroup>) y opcionalmente filtradas por texto (nombre o categoría) —
+ * así la lista es manejable aunque haya muchísimos insumos y se usen
+ * decenas al día.
+ */
+function buildInsumoOptionsHTML(filterText = "") {
+  const term = filterText.trim().toLowerCase();
+  const activos = insumos.filter((i) => i.activo !== false);
+  const coincide = (i) => i.nombre.toLowerCase().includes(term) || (i.categoriaNombre || "").toLowerCase().includes(term);
+  const visibles = term ? activos.filter(coincide) : activos;
+
+  const porCategoria = {};
+  visibles.forEach((i) => {
+    const cat = i.categoriaNombre || "Sin categoría";
+    (porCategoria[cat] = porCategoria[cat] || []).push(i);
+  });
+  const categorias = Object.keys(porCategoria).sort((a, b) => a.localeCompare(b));
+
+  let html = `<option value="">Seleccione insumo...</option>`;
+  categorias.forEach((cat) => {
+    html += `<optgroup label="${escapeHTML(cat)}">`;
+    html += porCategoria[cat]
+      .sort((a, b) => a.nombre.localeCompare(b.nombre))
+      .map((i) => `<option value="${i.id}" data-nombre="${escapeHTML(i.nombre)}">${escapeHTML(i.nombre)}</option>`)
+      .join("");
+    html += `</optgroup>`;
+  });
+  if (term && !visibles.length) html += `<option value="" disabled>Sin coincidencias para "${escapeHTML(filterText)}"</option>`;
+  return html;
+}
+
 function populateInsumoSelects() {
   document.querySelectorAll("select.select-insumo").forEach((sel) => {
-    const activos = insumos.filter((i) => i.activo !== false);
-    sel.innerHTML =
-      `<option value="">Seleccione insumo...</option>` +
-      activos.map((i) => `<option value="${i.id}" data-nombre="${i.nombre}">${i.nombre} (${i.categoriaNombre})</option>`).join("");
+    const searchInput = sel.parentElement?.querySelector(".insumo-search");
+    sel.innerHTML = buildInsumoOptionsHTML(searchInput ? searchInput.value : "");
+  });
+}
+
+/** Conecta cada buscador de insumo con el <select> que le sigue. */
+function setupInsumoSearchInputs() {
+  document.querySelectorAll(".insumo-search").forEach((input) => {
+    input.addEventListener("input", () => {
+      const sel = input.parentElement?.querySelector("select.select-insumo");
+      if (sel) sel.innerHTML = buildInsumoOptionsHTML(input.value);
+    });
   });
 }
 
@@ -232,18 +277,27 @@ function renderInsumosTable() {
   const tbody = document.getElementById("tabla-insumos-body");
   if (!tbody) return;
   const admin = isAdmin();
+  const buscar = (document.getElementById("insumos-catalogo-buscar")?.value || "").trim().toLowerCase();
+  const filtrados = buscar
+    ? insumos.filter((i) => i.nombre.toLowerCase().includes(buscar) || (i.categoriaNombre || "").toLowerCase().includes(buscar))
+    : insumos;
+
+  const countEl = document.getElementById("insumos-catalogo-count");
+  if (countEl) countEl.textContent = buscar ? `${filtrados.length} de ${insumos.length}` : `${insumos.length} insumo(s)`;
+
   tbody.innerHTML =
-    insumos
+    filtrados
       .map(
         (i) => `
       <tr class="border-t border-slate-100">
-        <td class="px-4 py-2">${i.nombre}</td>
-        <td class="px-4 py-2">${i.categoriaNombre}</td>
+        <td class="px-4 py-2">${escapeHTML(i.nombre)}</td>
+        <td class="px-4 py-2">${escapeHTML(i.categoriaNombre)}</td>
         <td class="px-4 py-2">${i.activo === false ? '<span class="text-red-600">Inactivo</span>' : '<span class="text-emerald-600">Activo</span>'}</td>
         <td class="px-4 py-2">${admin ? `<button data-id="${i.id}" class="text-red-700 hover:underline" data-act="del">Eliminar</button>` : "—"}</td>
       </tr>`
       )
-      .join("") || `<tr><td colspan="4" class="px-4 py-6 text-center text-slate-400">Catálogo vacío.</td></tr>`;
+      .join("") ||
+    `<tr><td colspan="4" class="px-4 py-6 text-center text-slate-400">${buscar ? "Sin coincidencias." : "Catálogo vacío."}</td></tr>`;
 
   if (admin) {
     tbody.querySelectorAll('[data-act="del"]').forEach((btn) => {
@@ -261,8 +315,20 @@ function renderStockTable() {
   const tbody = document.getElementById("tabla-stock-body");
   if (!tbody) return;
   const filtro = document.getElementById("stock-filtro-almacen")?.value || "";
+  const buscar = (document.getElementById("stock-buscar")?.value || "").trim().toLowerCase();
+  const soloCriticos = document.getElementById("stock-solo-criticos")?.checked || false;
   const admin = isAdmin();
-  const rows = stock.filter((s) => !filtro || s.almacen === filtro).sort((a, b) => (a.insumoNombre || "").localeCompare(b.insumoNombre || ""));
+
+  let rows = stock.filter((s) => !filtro || s.almacen === filtro);
+  if (buscar) {
+    rows = rows.filter(
+      (s) => (s.insumoNombre || "").toLowerCase().includes(buscar) || (s.categoriaNombre || "").toLowerCase().includes(buscar)
+    );
+  }
+  if (soloCriticos) {
+    rows = rows.filter((s) => Number(s.existencia) <= Number(s.minimo ?? 0));
+  }
+  rows = rows.sort((a, b) => (a.insumoNombre || "").localeCompare(b.insumoNombre || ""));
 
   tbody.innerHTML =
     rows
@@ -270,9 +336,9 @@ function renderStockTable() {
         const critico = Number(s.existencia) <= Number(s.minimo ?? 0);
         return `
       <tr class="border-t border-slate-100 ${critico ? "bg-red-50" : ""}">
-        <td class="px-4 py-2">${s.insumoNombre}</td>
-        <td class="px-4 py-2">${s.categoriaNombre || ""}</td>
-        <td class="px-4 py-2 font-medium">${s.almacen}</td>
+        <td class="px-4 py-2">${escapeHTML(s.insumoNombre)}</td>
+        <td class="px-4 py-2">${escapeHTML(s.categoriaNombre)}</td>
+        <td class="px-4 py-2 font-medium">${escapeHTML(s.almacen)}</td>
         <td class="px-4 py-2 ${critico ? "text-red-700 font-semibold" : ""}">${s.existencia}</td>
         <td class="px-4 py-2">
           ${admin ? `<input type="number" min="0" value="${s.minimo ?? 0}" data-id="${s.id}" class="w-20 border border-slate-300 rounded px-2 py-1 text-sm input-minimo" />` : (s.minimo ?? 0)}
@@ -280,7 +346,8 @@ function renderStockTable() {
         <td class="px-4 py-2">${critico ? '<span class="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-semibold">⚠ Bajo mínimo</span>' : '<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold">OK</span>'}</td>
       </tr>`;
       })
-      .join("") || `<tr><td colspan="6" class="px-4 py-6 text-center text-slate-400">Sin existencias registradas.</td></tr>`;
+      .join("") ||
+    `<tr><td colspan="6" class="px-4 py-6 text-center text-slate-400">${buscar || soloCriticos ? "Sin coincidencias para el filtro aplicado." : "Sin existencias registradas."}</td></tr>`;
 
   if (admin) {
     tbody.querySelectorAll(".input-minimo").forEach((input) => {
