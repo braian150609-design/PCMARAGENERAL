@@ -45,12 +45,12 @@ js/
 
 ## 1. Configuración de Firebase
 
-1. Cree un proyecto en [Firebase Console](https://console.firebase.google.com).
-2. Habilite **Authentication → Sign-in method → Correo electrónico/contraseña**.
-3. Cree una base de datos **Cloud Firestore** (modo producción).
-4. En **Configuración del proyecto → Tus apps**, registre una app web y copie el objeto de configuración.
-5. Pegue esos valores en `js/config.js`, en `firebaseConfig`.
-6. Despliegue las reglas de seguridad incluidas en `firestore.rules`:
+`js/config.js` ya está conectado al proyecto **pcmarageneral**. Pasos
+pendientes en la consola de Firebase de ese proyecto:
+
+1. Habilite **Authentication → Sign-in method → Correo electrónico/contraseña** (si aún no está activo).
+2. Cree la base de datos **Cloud Firestore** (modo producción) si aún no existe.
+3. Despliegue las reglas de seguridad incluidas en `firestore.rules`:
    ```bash
    npm install -g firebase-tools
    firebase login

@@ -3,21 +3,23 @@
  * -----------------------------------------------------------------------
  * Configuración central de la aplicación.
  *
- * IMPORTANTE: Reemplace los valores de `firebaseConfig` con las credenciales
- * reales de su proyecto de Firebase (Firebase Console → Configuración del
- * proyecto → Tus apps → SDK de Firebase). Sin esto, la aplicación no podrá
- * conectarse a Authentication ni a Firestore.
+ * Conectado al proyecto Firebase "pcmarageneral". La `apiKey` de un SDK web
+ * de Firebase no es un secreto (identifica el proyecto, no autoriza por sí
+ * sola); el control de acceso real lo aplican las reglas de seguridad en
+ * `firestore.rules` y, opcionalmente, la restricción por dominio HTTP de
+ * esta key en Google Cloud Console → APIs & Services → Credentials.
  * -----------------------------------------------------------------------
  */
 
-// Configuración del proyecto Firebase (reemplazar con datos reales).
+// Configuración del proyecto Firebase.
 export const firebaseConfig = {
-  apiKey: "REEMPLAZAR_API_KEY",
-  authDomain: "REEMPLAZAR.firebaseapp.com",
-  projectId: "REEMPLAZAR_PROJECT_ID",
-  storageBucket: "REEMPLAZAR.appspot.com",
-  messagingSenderId: "REEMPLAZAR_SENDER_ID",
-  appId: "REEMPLAZAR_APP_ID",
+  apiKey: "AIzaSyBvv3wz0bpuDJgBFZO9FLJpK094SlCSXY8",
+  authDomain: "pcmarageneral.firebaseapp.com",
+  projectId: "pcmarageneral",
+  storageBucket: "pcmarageneral.firebasestorage.app",
+  messagingSenderId: "515128369762",
+  appId: "1:515128369762:web:3e4ce50b81ed96e075e73b",
+  measurementId: "G-P13KHK9M0H",
 };
 
 // Roles soportados por el sistema.
