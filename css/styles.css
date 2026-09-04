@@ -208,10 +208,33 @@
   height: 2.5rem;
 }
 
+/* Contenedor reutilizable para impresiones "ad-hoc" (Lista Diaria, Cierre
+   Diario) que no viven permanentemente visibles en pantalla: se mantiene
+   fuera del viewport (no con display:none, para que printElement() pueda
+   moverlo/mostrarlo sin pelear con !important de otra regla) y al imprimir
+   recupera su tamaño normal. */
+.print-only-staging {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
 @media print {
   @page {
     size: letter;
     margin: 14mm 12mm;
+  }
+  body.printing-single .print-target.print-only-staging {
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    opacity: 1 !important;
   }
   body {
     background: #ffffff !important;
@@ -243,9 +266,27 @@
     display: block !important;
   }
 
+  /* La tabla del historial vive dentro de un contenedor con scroll
+     horizontal en pantalla (.overflow-x-auto, para móviles). En papel no
+     hay scroll posible: se libera el contenedor y se fuerza que la tabla
+     quepa en el ancho de la hoja, con texto compacto y con salto de línea
+     en vez de desbordarse. */
+  .overflow-x-auto {
+    overflow: visible !important;
+  }
   table {
-    width: 100%;
+    width: 100% !important;
+    max-width: 100%;
     border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 8.5pt;
+  }
+  th,
+  td {
+    padding: 3px 4px !important;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    white-space: normal !important;
   }
   thead {
     display: table-header-group;

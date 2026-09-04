@@ -32,7 +32,7 @@ export const ROLES = {
 // errores de tipeo en el resto de los módulos).
 export const COLLECTIONS = {
   USUARIOS: "usuarios",
-  PACIENTES: "pacientes",
+  PACIENTES: "pacientes", // Lista diaria de pacientes atendidos
   TRASLADOS: "traslados",
   FALLECIDOS: "fallecidos",
   GUARDIAS: "guardias",
@@ -40,12 +40,14 @@ export const COLLECTIONS = {
   DESPACHOS_COMBUSTIBLE: "despachosCombustible",
   HIDRO_LECTURAS: "hidroLecturas",
   CONFIG: "config",
-  EDUCACION: "educacionRiesgo",
+  EDUCACION: "educacion",
+  INSPECCIONES: "gestionRiesgoInspeccion",
   CATEGORIAS_INSUMOS: "categoriasInsumos",
   INSUMOS: "insumos",
   INSUMO_STOCK: "insumoStock",
   ENTRADAS_INVENTARIO: "entradasInventario",
   TRANSFERENCIAS_INVENTARIO: "transferenciasInventario",
+  CIERRES_DIARIOS: "cierresDiarios",
 };
 
 // Almacenes / ubicaciones de inventario independientes entre sí.
@@ -62,19 +64,24 @@ export const CATEGORIAS_INSTITUCIONES = [
   "Otros",
 ];
 
-// Umbrales por defecto del nivel del Río Limón (metros). Pueden ser
-// sobrescritos por el documento config/hidrometeorologia en Firestore desde
-// la interfaz de administración.
+// Umbrales por defecto del nivel del Río Limón. La escala institucional es
+// un índice de 0 a 9 (no metros): 0-9 pueden ser sobrescritos por el
+// documento config/hidrometeorologia en Firestore desde la interfaz de
+// administración.
 export const UMBRALES_HIDRO_DEFAULT = {
-  normal: 2.0,
-  advertencia: 3.0,
-  alerta: 4.0,
-  // Endpoint/API externo opcional para consultar el nivel de forma
-  // automática. Se deja vacío por defecto; el admin puede configurarlo
-  // desde el módulo de Hidrometeorología.
+  advertencia: 4,
+  alerta: 7,
+  // Endpoint/API externo que nutre automáticamente el nivel (lo alimenta
+  // otra aplicación). Se deja vacío por defecto; el admin puede
+  // configurarlo desde el módulo de Hidrometeorología.
   apiEndpoint: "",
   apiKey: "",
 };
+export const NIVEL_HIDRO_MIN = 0;
+export const NIVEL_HIDRO_MAX = 9;
+
+// Tipos de combustible fijos para el módulo de Despacho de Combustible.
+export const TIPOS_COMBUSTIBLE = ["Gasolina", "Gasoil"];
 
 // Datos institucionales usados en encabezados de pantalla e impresión.
 export const INSTITUCION = {

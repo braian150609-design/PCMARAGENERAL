@@ -1,7 +1,7 @@
 /**
  * educacion.js
  * -----------------------------------------------------------------------
- * Módulo de Educación y Gestión de Riesgo.
+ * Módulo de Educación.
  * -----------------------------------------------------------------------
  */
 import { COLLECTIONS } from "./config.js";
@@ -16,7 +16,8 @@ export function initEducacion() {
     form: document.getElementById("form-educacion"),
     historialRoot: document.getElementById("historial-educacion"),
     dateField: "fecha",
-    historialTitle: "Historial de Educación y Gestión de Riesgo",
+    historialTitle: "Historial de Educación",
+    firmas: ["Jefe de Departamento", "Director"],
     columns: [
       { key: "fecha", label: "Fecha", format: (r) => formatDate(r.fecha) },
       { key: "tipoInstitucion", label: "Tipo" },

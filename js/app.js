@@ -18,6 +18,7 @@ import { initGuardias } from "./guardias.js";
 import { initCombustible } from "./combustible.js";
 import { initHidrometeorologia, refreshHidrometeorologia } from "./hidrometeorologia.js";
 import { initEducacion } from "./educacion.js";
+import { initInspeccion } from "./inspeccion.js";
 import { initInventario } from "./inventario.js";
 import { initReportes } from "./reportes.js";
 import { initUsuarios } from "./usuarios.js";
@@ -36,6 +37,7 @@ function startModules() {
   initCombustible();
   initHidrometeorologia();
   initEducacion();
+  initInspeccion();
   initDashboard();
   initReportes();
   initUsuarios();
@@ -48,6 +50,7 @@ function registerRoutes() {
   registerView("combustible");
   registerView("hidro", { onEnter: refreshHidrometeorologia });
   registerView("educacion");
+  registerView("inspeccion");
   registerView("inventario");
   registerView("reportes", { onEnter: () => initReportes() });
   registerView("catalogos");

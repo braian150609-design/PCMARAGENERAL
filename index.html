@@ -106,7 +106,8 @@
       <button class="nav-link" data-view="guardias">🧭 Guardias de Prevención</button>
       <button class="nav-link" data-view="combustible">⛽ Combustible</button>
       <button class="nav-link" data-view="hidro">🌊 Río Limón</button>
-      <button class="nav-link" data-view="educacion">🎓 Educación y Riesgo</button>
+      <button class="nav-link" data-view="educacion">🎓 Educación</button>
+      <button class="nav-link" data-view="inspeccion">🔍 Gestión de Riesgo</button>
       <button class="nav-link" data-view="inventario">📦 Inventario</button>
       <button class="nav-link" data-view="reportes">🖨️ Reportes</button>
       <div class="nav-admin-only hidden mt-2 pt-2 border-t border-navy-700">
@@ -124,6 +125,7 @@
       <button class="nav-link !py-2 !px-3 whitespace-nowrap" data-view="combustible">⛽ Combustible</button>
       <button class="nav-link !py-2 !px-3 whitespace-nowrap" data-view="hidro">🌊 Río Limón</button>
       <button class="nav-link !py-2 !px-3 whitespace-nowrap" data-view="educacion">🎓 Educación</button>
+      <button class="nav-link !py-2 !px-3 whitespace-nowrap" data-view="inspeccion">🔍 Gestión de Riesgo</button>
       <button class="nav-link !py-2 !px-3 whitespace-nowrap" data-view="inventario">📦 Inventario</button>
       <button class="nav-link !py-2 !px-3 whitespace-nowrap" data-view="reportes">🖨️ Reportes</button>
       <button class="nav-link nav-admin-only hidden !py-2 !px-3 whitespace-nowrap" data-view="catalogos">🗂️ Catálogos</button>
@@ -160,30 +162,39 @@
       <section id="view-emergencias" class="view hidden space-y-4">
         <h2 class="text-xl font-bold text-slate-800">Operaciones de Emergencia</h2>
         <div class="flex gap-2 no-print">
-          <button class="subtab-btn subtab-active" data-subtab="pacientes">Pacientes</button>
+          <button class="subtab-btn subtab-active" data-subtab="pacientes">Lista Diaria</button>
           <button class="subtab-btn" data-subtab="traslados">Traslados</button>
           <button class="subtab-btn" data-subtab="fallecidos">Fallecidos</button>
         </div>
 
         <div id="panel-pacientes" class="subtab-panel space-y-4">
           <form id="form-pacientes" class="form-card">
+            <h3 class="font-semibold text-slate-700 mb-2">Agregar paciente a la lista del día</h3>
             <div class="form-grid">
-              <div><label class="form-label">Fecha / Hora</label><input required type="datetime-local" name="fecha" class="form-input" /></div>
+              <div><label class="form-label">Fecha</label><input required type="date" name="fecha" class="form-input" /></div>
               <div><label class="form-label">Categoría de edad</label>
                 <select required name="categoriaEdad" class="form-input"><option value="">Seleccione...</option><option>Niño</option><option>Adolescente</option><option>Adulto</option></select>
               </div>
               <div><label class="form-label">Género</label>
                 <select required name="genero" class="form-input"><option value="">Seleccione...</option><option>Masculino</option><option>Femenino</option></select>
               </div>
-              <div><label class="form-label">Motivo de atención / Diagnóstico preliminar</label><input required type="text" name="motivo" class="form-input" /></div>
-              <div><label class="form-label">Ubicación del evento</label><input required type="text" name="ubicacion" class="form-input" /></div>
               <div><label class="form-label">Responsable</label><input required type="text" name="responsable" class="form-input" /></div>
             </div>
             <div class="form-actions">
               <button type="button" data-role="cancel-edit" class="btn-secondary">Cancelar edición</button>
-              <button type="submit" class="btn-primary">Guardar paciente</button>
+              <button type="submit" class="btn-primary">Agregar a la lista</button>
             </div>
           </form>
+
+          <div class="form-card no-print">
+            <h3 class="font-semibold text-slate-700 mb-1">🖨️ Imprimir Lista Diaria</h3>
+            <p class="text-xs text-slate-500 mb-3">Genera el documento formal del día seleccionado con el conteo de niños, adolescentes, adultos, traslados y fallecidos — listo para la firma del Jefe de Departamento y el Director.</p>
+            <div class="flex flex-wrap items-end gap-3">
+              <div><label class="form-label">Fecha de la lista</label><input type="date" id="lista-diaria-fecha" class="form-input !w-48" /></div>
+              <button id="btn-imprimir-lista-diaria" type="button" class="btn-primary">🖨️ Generar e Imprimir</button>
+            </div>
+          </div>
+
           <div id="historial-pacientes"></div>
         </div>
 
@@ -195,8 +206,10 @@
                 <select required id="traslado-tipo" name="tipo" class="form-input"><option value="">Seleccione...</option><option>Apoyo</option><option>Interhospitalario</option></select>
               </div>
               <div id="traslado-centro-wrap" class="hidden"><label class="form-label">Centro de salud de destino</label><input type="text" name="centroDestino" class="form-input" /></div>
+              <div><label class="form-label">Nombre del paciente</label><input required type="text" name="nombrePaciente" class="form-input" /></div>
+              <div><label class="form-label">Cédula del paciente</label><input required type="text" name="cedulaPaciente" class="form-input" /></div>
+              <div><label class="form-label">Edad</label><input required type="number" min="0" name="edadPaciente" class="form-input" /></div>
               <div><label class="form-label">Unidad vehicular asignada</label><input required type="text" name="unidad" class="form-input" /></div>
-              <div><label class="form-label">Personal a bordo</label><input required type="text" name="personalABordo" class="form-input" /></div>
               <div><label class="form-label">Responsable</label><input required type="text" name="responsable" class="form-input" /></div>
               <div class="md:col-span-3"><label class="form-label">Observaciones</label><textarea name="observaciones" class="form-input" rows="2"></textarea></div>
             </div>
@@ -256,6 +269,7 @@
           <div class="form-grid">
             <div><label class="form-label">Fecha</label><input required type="date" name="fecha" class="form-input" /></div>
             <div><label class="form-label">Institución</label><select required name="institucionId" class="form-input select-institucion"></select></div>
+            <div><label class="form-label">Tipo de combustible</label><select required name="tipoCombustible" class="form-input"><option value="">Seleccione...</option><option>Gasolina</option><option>Gasoil</option></select></div>
             <div><label class="form-label">Cantidad de litros despachados</label><input required type="number" min="0" step="0.01" name="litros" class="form-input" /></div>
             <div><label class="form-label">Unidad vehicular / Placa</label><input required type="text" name="unidadVehicular" class="form-input" /></div>
             <div><label class="form-label">Responsable</label><input required type="text" name="responsable" class="form-input" /></div>
@@ -274,11 +288,12 @@
         <h2 class="text-xl font-bold text-slate-800">Hidrometeorología — Río Limón</h2>
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div class="bg-white rounded-lg border border-slate-200 shadow-sm p-6 text-center lg:col-span-1">
-            <div class="text-sm text-slate-500 mb-1">Nivel actual</div>
-            <div id="hidro-nivel-actual" class="text-5xl font-extrabold text-navy-800">— m</div>
+            <div class="text-sm text-slate-500 mb-1">Nivel actual (escala 0–9)</div>
+            <div id="hidro-nivel-actual" class="text-5xl font-extrabold text-navy-800">—</div>
             <div id="hidro-fecha-lectura" class="text-xs text-slate-400 mt-1 mb-4">Sin lecturas registradas</div>
             <div id="hidro-estado-badge" class="inline-block px-4 py-1.5 rounded-full border text-sm font-bold">SIN DATOS</div>
-            <button id="btn-hidro-consultar" class="btn-secondary w-full mt-5 no-print">🔄 Consultar fuente externa</button>
+            <button id="btn-hidro-consultar" class="btn-secondary w-full mt-5 no-print">🔄 Consultar fuente externa (API)</button>
+            <p class="text-[11px] text-slate-400 mt-2 no-print">El nivel lo nutre automáticamente otra aplicación mediante API; aquí no se registra manualmente.</p>
             <div class="text-left text-xs text-slate-500 mt-5 space-y-1 border-t border-slate-100 pt-3">
               <div class="flex justify-between"><span class="font-semibold text-emerald-700">Normal</span><span id="hidro-umbral-normal-label"></span></div>
               <div class="flex justify-between"><span class="font-semibold text-amber-700">Advertencia</span><span id="hidro-umbral-advertencia-label"></span></div>
@@ -292,33 +307,25 @@
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <form id="form-hidro-lectura" class="form-card">
-            <h3 class="font-semibold text-slate-700 mb-2">Registrar lectura manual</h3>
-            <div class="form-grid !grid-cols-1">
-              <div><label class="form-label">Nivel actual (metros)</label><input required type="number" step="0.01" min="0" name="nivel" class="form-input" /></div>
-            </div>
-            <div class="form-actions"><button type="submit" class="btn-primary">Registrar lectura</button></div>
-          </form>
-
           <form id="form-hidro-config" class="form-card hidden">
             <h3 class="font-semibold text-slate-700 mb-2">Configuración de umbrales y fuente externa <span class="text-xs text-slate-400">(Administrador)</span></h3>
             <div class="form-grid !grid-cols-1">
-              <div><label class="form-label">Umbral de advertencia (m)</label><input required type="number" step="0.01" name="advertencia" class="form-input" /></div>
-              <div><label class="form-label">Umbral de alerta roja (m)</label><input required type="number" step="0.01" name="alerta" class="form-input" /></div>
-              <div><label class="form-label">Endpoint / API externa (opcional)</label><input type="url" name="apiEndpoint" placeholder="https://..." class="form-input" /></div>
+              <div><label class="form-label">Umbral de advertencia (escala 0–9)</label><input required type="number" step="1" min="0" max="9" name="advertencia" class="form-input" /></div>
+              <div><label class="form-label">Umbral de alerta roja (escala 0–9)</label><input required type="number" step="1" min="0" max="9" name="alerta" class="form-input" /></div>
+              <div><label class="form-label">Endpoint / API externa</label><input type="url" name="apiEndpoint" placeholder="https://..." class="form-input" /></div>
               <div><label class="form-label">API Key (opcional)</label><input type="text" name="apiKey" class="form-input" /></div>
             </div>
             <div class="form-actions"><button type="submit" class="btn-primary">Guardar configuración</button></div>
           </form>
-          <p id="hidro-config-readonly-note" class="text-xs text-slate-400 lg:col-start-2">Solo el administrador puede modificar los umbrales y la fuente externa de datos.</p>
+          <p id="hidro-config-readonly-note" class="text-xs text-slate-400">Solo el administrador puede modificar los umbrales y la fuente externa de datos. El nivel se obtiene automáticamente vía API; no hay registro manual.</p>
         </div>
 
         <div id="historial-hidro"></div>
       </section>
 
-      <!-- ============ EDUCACIÓN Y GESTIÓN DE RIESGO ============ -->
+      <!-- ============ EDUCACIÓN ============ -->
       <section id="view-educacion" class="view hidden space-y-4">
-        <h2 class="text-xl font-bold text-slate-800">Educación y Gestión de Riesgo</h2>
+        <h2 class="text-xl font-bold text-slate-800">Educación</h2>
         <form id="form-educacion" class="form-card">
           <div class="form-grid">
             <div><label class="form-label">Tipo</label><select required name="tipoInstitucion" class="form-input"><option value="">Seleccione...</option><option>Institución</option><option>Comunidad</option></select></div>
@@ -336,6 +343,26 @@
           </div>
         </form>
         <div id="historial-educacion"></div>
+      </section>
+
+      <!-- ============ GESTIÓN DE RIESGO (INSPECCIÓN) ============ -->
+      <section id="view-inspeccion" class="view hidden space-y-4">
+        <h2 class="text-xl font-bold text-slate-800">Gestión de Riesgo (Inspección)</h2>
+        <form id="form-inspeccion" class="form-card">
+          <div class="form-grid">
+            <div><label class="form-label">Fecha</label><input required type="date" name="fecha" class="form-input" /></div>
+            <div><label class="form-label">Institución</label><input required type="text" name="institucion" class="form-input" /></div>
+            <div><label class="form-label">Solicitante</label><input required type="text" name="solicitante" class="form-input" /></div>
+            <div><label class="form-label">C.I. o RIF</label><input required type="text" name="cedulaRif" class="form-input" /></div>
+            <div><label class="form-label">Responsable</label><input required type="text" name="responsable" class="form-input" /></div>
+            <div class="md:col-span-3"><label class="form-label">Observación</label><textarea name="observacion" class="form-input" rows="2"></textarea></div>
+          </div>
+          <div class="form-actions">
+            <button type="button" data-role="cancel-edit" class="btn-secondary">Cancelar edición</button>
+            <button type="submit" class="btn-primary">Guardar inspección</button>
+          </div>
+        </form>
+        <div id="historial-inspeccion"></div>
       </section>
 
       <!-- ============ INVENTARIO ============ -->
@@ -442,6 +469,21 @@
             </div>
           </div>
           <div id="reportes-resumen-general"></div>
+        </div>
+
+        <div class="border-t border-slate-200 pt-6 space-y-3">
+          <div class="flex flex-wrap items-end justify-between gap-3 no-print">
+            <div>
+              <h3 class="text-lg font-bold text-slate-800">Cierre Diario</h3>
+              <p class="text-xs text-slate-500 max-w-md">Genera y registra el cierre con todos los registros de la fecha seleccionada (puede ser distinta al día de hoy), listo para la firma del Departamento de Sistema y el Director.</p>
+            </div>
+            <div class="flex flex-wrap items-end gap-2">
+              <div><label class="block text-xs text-slate-500">Fecha del cierre</label><input type="date" id="cierre-fecha" class="border border-slate-300 rounded-md px-2 py-1 text-sm" /></div>
+              <button id="btn-generar-cierre" class="px-3 py-1.5 text-xs rounded-md bg-navy-800 text-white hover:bg-navy-900">📋 Generar, Registrar e Imprimir</button>
+            </div>
+          </div>
+          <div id="cierre-preview"></div>
+          <div id="historial-cierres"></div>
         </div>
       </section>
 

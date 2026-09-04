@@ -119,9 +119,10 @@ export function formatDate(value, withTime = false) {
  * @param {Function} [opts.onEdit] - (row) => void.
  * @param {Function} [opts.onDelete] - (row) => void.
  * @param {string} [opts.exportFileName] - nombre base para exportaciones.
+ * @param {[string,string]} [opts.firmas] - etiquetas de las dos firmas del pie de impresión.
  */
 export function createHistorial(opts) {
-  const { root, title, columns, getRows, dateField, isAdmin, onEdit, onDelete, exportFileName } = opts;
+  const { root, title, columns, getRows, dateField, isAdmin, onEdit, onDelete, exportFileName, firmas } = opts;
   const uid = "h_" + Math.random().toString(36).slice(2, 9);
 
   root.innerHTML = `
@@ -141,7 +142,6 @@ export function createHistorial(opts) {
             <label class="block text-xs text-slate-500">Buscar</label>
             <input type="text" id="${uid}-q" placeholder="Texto..." class="border border-slate-300 rounded-md px-2 py-1 text-sm" />
           </div>
-          <button id="${uid}-clear" class="px-3 py-1.5 text-xs rounded-md border border-slate-300 hover:bg-slate-50">Limpiar</button>
           <button id="${uid}-print" class="px-3 py-1.5 text-xs rounded-md bg-navy-800 text-white hover:bg-navy-900">🖨️ Imprimir</button>
           <button id="${uid}-xlsx" class="px-3 py-1.5 text-xs rounded-md bg-emerald-700 text-white hover:bg-emerald-800">⬇ Excel</button>
           <button id="${uid}-pdf" class="px-3 py-1.5 text-xs rounded-md bg-red-700 text-white hover:bg-red-800">⬇ PDF</button>
@@ -160,7 +160,7 @@ export function createHistorial(opts) {
         </table>
       </div>
       <div class="p-3 text-xs text-slate-400 border-t border-slate-100" id="${uid}-count"></div>
-      <div class="print-footer hidden">${printFooterHTML()}</div>
+      <div class="print-footer hidden">${printFooterHTML(firmas)}</div>
     </div>`;
 
   const el = (sel) => root.querySelector(sel);
@@ -223,12 +223,6 @@ export function createHistorial(opts) {
   el(`#${uid}-desde`).addEventListener("change", render);
   el(`#${uid}-hasta`).addEventListener("change", render);
   el(`#${uid}-q`).addEventListener("input", render);
-  el(`#${uid}-clear`).addEventListener("click", () => {
-    el(`#${uid}-desde`).value = "";
-    el(`#${uid}-hasta`).value = "";
-    el(`#${uid}-q`).value = "";
-    render();
-  });
   el(`#${uid}-print`).addEventListener("click", () => printElement(root, title));
   el(`#${uid}-xlsx`).addEventListener("click", () =>
     exportToExcel(exportFileName || title, columns, filteredRows())
@@ -240,7 +234,7 @@ export function createHistorial(opts) {
   return { render };
 }
 
-function escapeHTML(str) {
+export function escapeHTML(str) {
   if (str === null || str === undefined) return "—";
   return String(str)
     .replaceAll("&", "&amp;")
@@ -267,17 +261,19 @@ export function printHeaderHTML(subtitle) {
     </div>`;
 }
 
-export function printFooterHTML() {
+export function printFooterHTML(firmas) {
+  const labels = firmas && firmas.length === 2 ? firmas : ["Responsable", "Departamento"];
   return `
     <div class="print-signatures">
+      ${labels
+        .map(
+          (label) => `
       <div class="print-signature">
         <div class="print-signature-line"></div>
-        <div>Firma del Responsable</div>
-      </div>
-      <div class="print-signature">
-        <div class="print-signature-line"></div>
-        <div>Firma del Departamento</div>
-      </div>
+        <div>Firma del ${label}</div>
+      </div>`
+        )
+        .join("")}
     </div>`;
 }
 
@@ -315,6 +311,32 @@ export function printElement(root, title) {
   // el timeout es un respaldo para navegadores que no lo disparan.
   window.addEventListener("afterprint", restore, { once: true });
   setTimeout(restore, 2000);
+}
+
+/**
+ * Imprime un documento institucional "ad-hoc" que no proviene de un
+ * historial (p. ej. la Lista Diaria de Pacientes o el Cierre Diario): arma
+ * cintillo + cuerpo + firmas en un contenedor reutilizable oculto en
+ * pantalla (`.print-only-staging`, ver css/styles.css) y lo imprime con la
+ * misma estrategia de printElement().
+ * @param {string} title
+ * @param {string} bodyHTML - HTML del cuerpo del documento (con estilos inline, no depende de Tailwind).
+ * @param {[string,string]} [firmas]
+ */
+let printScratchEl = null;
+export function printAdHoc(title, bodyHTML, firmas) {
+  if (!printScratchEl) {
+    printScratchEl = document.createElement("div");
+    printScratchEl.className = "print-only-staging";
+    document.body.appendChild(printScratchEl);
+  }
+  printScratchEl.innerHTML = `
+    <div style="background:#fff;">
+      <div class="print-header">${printHeaderHTML(title)}</div>
+      ${bodyHTML}
+      <div class="print-footer">${printFooterHTML(firmas)}</div>
+    </div>`;
+  printElement(printScratchEl, title);
 }
 
 /* ---------------------------------------------------------------------- */

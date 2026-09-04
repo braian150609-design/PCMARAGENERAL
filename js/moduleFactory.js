@@ -29,6 +29,7 @@ import { isAdmin, getResponsableLabel } from "./auth.js";
  * @param {string} [cfg.responsableFieldName='responsable'] - si el form trae su propio campo
  * @param {Function} [cfg.beforeSave] - (dataObj, formEl) => dataObj (transformación previa)
  * @param {Function} [cfg.onRowsChange] - (rows) => void, notificación externa (p.ej. dashboard)
+ * @param {[string,string]} [cfg.firmas] - etiquetas de las dos firmas del pie de impresión del historial.
  */
 export function createCrudModule(cfg) {
   const {
@@ -39,6 +40,7 @@ export function createCrudModule(cfg) {
     dateField,
     historialTitle,
     responsableFieldName = "responsable",
+    firmas,
     beforeSave,
     onRowsChange,
   } = cfg;
@@ -102,6 +104,7 @@ export function createCrudModule(cfg) {
     getRows: () => rows,
     isAdmin,
     exportFileName: historialTitle,
+    firmas,
     onEdit: (row) => {
       if (!row) return;
       editingId = row.id;

@@ -31,15 +31,16 @@ js/
   ui.js                        Toasts, modal, tabla de historial, impresión, export Excel/PDF
   router.js                    Enrutador por hash entre vistas
   dashboard.js                  Métricas y gráficos analíticos en tiempo real
-  emergencias.js                Pacientes / Traslados / Fallecidos
+  emergencias.js                Lista Diaria de Pacientes / Traslados / Fallecidos
   guardias.js                   Guardias de Prevención
   combustible.js                 Despacho de Combustible
-  hidrometeorologia.js           Monitoreo del Río Limón + integración API externa
-  educacion.js                   Educación y Gestión de Riesgo
+  hidrometeorologia.js           Monitoreo del Río Limón (escala 0-9) + integración API externa
+  educacion.js                   Educación
+  inspeccion.js                  Gestión de Riesgo (Inspección)
   inventario.js                  Insumos, existencias por almacén, entradas, transferencias
   catalogos.js                   Catálogos maestros (instituciones, categorías de insumos)
   usuarios.js                    Administración de usuarios y roles
-  reportes.js                    Centro de reportes por módulo + resumen general
+  reportes.js                    Centro de reportes por módulo + Resumen General + Cierre Diario
   app.js                         Bootstrap de la aplicación
 ```
 

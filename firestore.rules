@@ -97,10 +97,25 @@ service cloud.firestore {
       allow create: if canCreateOperational();
       allow update, delete: if canWriteOperational();
     }
-    match /educacionRiesgo/{docId} {
+    match /educacion/{docId} {
       allow read: if canReadOperational();
       allow create: if canCreateOperational();
       allow update, delete: if canWriteOperational();
+    }
+    match /gestionRiesgoInspeccion/{docId} {
+      allow read: if canReadOperational();
+      allow create: if canCreateOperational();
+      allow update, delete: if canWriteOperational();
+    }
+    match /cierresDiarios/{docId} {
+      // "Registrable": cualquier usuario activo puede generar un cierre;
+      // es un documento de cierre/trazabilidad, por lo que no se edita una
+      // vez creado (solo el administrador puede eliminarlo si fue un
+      // error).
+      allow read: if canReadOperational();
+      allow create: if canCreateOperational();
+      allow update: if false;
+      allow delete: if canWriteOperational();
     }
     match /hidroLecturas/{docId} {
       allow read: if isSignedIn();

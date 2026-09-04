@@ -8,20 +8,31 @@
  * -----------------------------------------------------------------------
  */
 import { COLLECTIONS } from "./config.js";
-import { subscribeCollection } from "./data.js";
-import { createHistorial, formatDate, toDate, exportToExcel, exportToPDF, printElement, printHeaderHTML, printFooterHTML } from "./ui.js";
+import { subscribeCollection, createRecord } from "./data.js";
+import {
+  createHistorial,
+  formatDate,
+  toDate,
+  parseLocalDate,
+  exportToExcel,
+  exportToPDF,
+  printElement,
+  printAdHoc,
+  printHeaderHTML,
+  printFooterHTML,
+  toast,
+} from "./ui.js";
+import { getResponsableLabel } from "./auth.js";
 
 const REPORTS = {
   pacientes: {
-    label: "Pacientes",
+    label: "Lista Diaria de Pacientes",
     collection: COLLECTIONS.PACIENTES,
     dateField: "fecha",
     columns: [
-      { key: "fecha", label: "Fecha/Hora", format: (r) => formatDate(r.fecha, true) },
+      { key: "fecha", label: "Fecha", format: (r) => formatDate(r.fecha) },
       { key: "categoriaEdad", label: "Categoría" },
       { key: "genero", label: "Género" },
-      { key: "motivo", label: "Motivo / Diagnóstico" },
-      { key: "ubicacion", label: "Ubicación" },
       { key: "responsable", label: "Responsable" },
     ],
   },
@@ -32,6 +43,8 @@ const REPORTS = {
     columns: [
       { key: "fecha", label: "Fecha/Hora", format: (r) => formatDate(r.fecha, true) },
       { key: "tipo", label: "Tipo" },
+      { key: "nombrePaciente", label: "Paciente" },
+      { key: "cedulaPaciente", label: "Cédula" },
       { key: "centroDestino", label: "Centro destino" },
       { key: "unidad", label: "Unidad" },
       { key: "responsable", label: "Responsable" },
@@ -67,13 +80,14 @@ const REPORTS = {
     columns: [
       { key: "fecha", label: "Fecha", format: (r) => formatDate(r.fecha) },
       { key: "institucionNombre", label: "Institución" },
+      { key: "tipoCombustible", label: "Tipo" },
       { key: "litros", label: "Litros" },
       { key: "unidadVehicular", label: "Unidad" },
       { key: "responsable", label: "Responsable" },
     ],
   },
   educacion: {
-    label: "Educación y Gestión de Riesgo",
+    label: "Educación",
     collection: COLLECTIONS.EDUCACION,
     dateField: "fecha",
     columns: [
@@ -81,6 +95,18 @@ const REPORTS = {
       { key: "nombre", label: "Institución / Comunidad" },
       { key: "poblacionBeneficiada", label: "Población" },
       { key: "tema", label: "Tema" },
+      { key: "responsable", label: "Responsable" },
+    ],
+  },
+  inspeccion: {
+    label: "Gestión de Riesgo (Inspección)",
+    collection: COLLECTIONS.INSPECCIONES,
+    dateField: "fecha",
+    columns: [
+      { key: "fecha", label: "Fecha", format: (r) => formatDate(r.fecha) },
+      { key: "institucion", label: "Institución" },
+      { key: "solicitante", label: "Solicitante" },
+      { key: "cedulaRif", label: "C.I. / RIF" },
       { key: "responsable", label: "Responsable" },
     ],
   },
@@ -195,6 +221,133 @@ function renderResumenGeneral() {
       ], filas);
 }
 
+/* ---------------------------------------------------------------------- */
+/* Cierre Diario                                                            */
+/* ---------------------------------------------------------------------- */
+const cellStyle = "border:1px solid #cbd5e1;padding:5px 8px;";
+const headStyle = `${cellStyle}background:#f1f5f9;font-weight:bold;`;
+let cierresHistorial = null;
+
+function sameDate(row, field, dateStr) {
+  const d = toDate(row[field]);
+  return d ? d.toLocaleDateString("en-CA") === dateStr : false;
+}
+
+function computeCierreCounts(dateStr) {
+  const pacientes = (dataCache[COLLECTIONS.PACIENTES] || []).filter((r) => sameDate(r, "fecha", dateStr));
+  const traslados = (dataCache[COLLECTIONS.TRASLADOS] || []).filter((r) => sameDate(r, "fecha", dateStr));
+  const fallecidos = (dataCache[COLLECTIONS.FALLECIDOS] || []).filter((r) => sameDate(r, "fecha", dateStr));
+  const guardias = (dataCache[COLLECTIONS.GUARDIAS] || []).filter((r) => sameDate(r, "fecha", dateStr));
+  const combustible = (dataCache[COLLECTIONS.DESPACHOS_COMBUSTIBLE] || []).filter((r) => sameDate(r, "fecha", dateStr));
+  const educacion = (dataCache[COLLECTIONS.EDUCACION] || []).filter((r) => sameDate(r, "fecha", dateStr));
+  const inspeccion = (dataCache[COLLECTIONS.INSPECCIONES] || []).filter((r) => sameDate(r, "fecha", dateStr));
+  const entradas = (dataCache[COLLECTIONS.ENTRADAS_INVENTARIO] || []).filter((r) => sameDate(r, "fecha", dateStr));
+  const transferencias = (dataCache[COLLECTIONS.TRANSFERENCIAS_INVENTARIO] || []).filter((r) => sameDate(r, "fecha", dateStr));
+
+  return {
+    pacientesTotal: pacientes.length,
+    ninos: pacientes.filter((p) => p.categoriaEdad === "Niño").length,
+    adolescentes: pacientes.filter((p) => p.categoriaEdad === "Adolescente").length,
+    adultos: pacientes.filter((p) => p.categoriaEdad === "Adulto").length,
+    traslados: traslados.length,
+    fallecidos: fallecidos.length,
+    guardias: guardias.length,
+    combustibleDespachos: combustible.length,
+    combustibleLitros: combustible.reduce((s, r) => s + (Number(r.litros) || 0), 0),
+    educacion: educacion.length,
+    inspeccion: inspeccion.length,
+    entradasInventario: entradas.length,
+    transferenciasInventario: transferencias.length,
+  };
+}
+
+function buildCierreBodyHTML(fechaFmt, c) {
+  const row = (label, value) => `
+    <tr><td style="${cellStyle}">${label}</td><td style="${cellStyle}text-align:center;font-weight:bold;">${value}</td></tr>`;
+  return `
+    <div style="padding:12px 20px 4px;font-family:Arial,Helvetica,sans-serif;color:#1e293b;">
+      <h2 style="text-align:center;font-size:15px;margin:6px 0 4px;">CIERRE DIARIO DE OPERACIONES</h2>
+      <p style="text-align:center;font-size:11px;margin:0 0 14px;color:#475569;">Fecha del cierre: ${fechaFmt}</p>
+      <table style="width:100%;border-collapse:collapse;font-size:11px;">
+        <thead><tr><th style="${headStyle}">Concepto</th><th style="${headStyle}">Total</th></tr></thead>
+        <tbody>
+          ${row("Pacientes atendidos (lista diaria)", c.pacientesTotal)}
+          ${row("&nbsp;&nbsp;— Niños", c.ninos)}
+          ${row("&nbsp;&nbsp;— Adolescentes", c.adolescentes)}
+          ${row("&nbsp;&nbsp;— Adultos", c.adultos)}
+          ${row("Traslados", c.traslados)}
+          ${row("Fallecidos", c.fallecidos)}
+          ${row("Guardias de Prevención", c.guardias)}
+          ${row("Despachos de combustible", c.combustibleDespachos)}
+          ${row("Litros de combustible despachados", c.combustibleLitros)}
+          ${row("Educación (actividades)", c.educacion)}
+          ${row("Gestión de Riesgo (inspecciones)", c.inspeccion)}
+          ${row("Inventario — entradas", c.entradasInventario)}
+          ${row("Inventario — transferencias", c.transferenciasInventario)}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+async function generarCierreDiario(dateStr) {
+  if (!dateStr) {
+    toast("Seleccione la fecha del cierre.", "error");
+    return;
+  }
+  const counts = computeCierreCounts(dateStr);
+  const fechaFmt = new Date(dateStr + "T00:00:00").toLocaleDateString("es-VE", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const bodyHTML = buildCierreBodyHTML(fechaFmt, counts);
+
+  const preview = document.getElementById("cierre-preview");
+  if (preview) {
+    preview.innerHTML = `<div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">${bodyHTML}</div>`;
+  }
+
+  try {
+    await createRecord(COLLECTIONS.CIERRES_DIARIOS, {
+      fecha: parseLocalDate(dateStr),
+      fechaStr: dateStr,
+      counts,
+      responsable: getResponsableLabel(),
+    });
+    toast("Cierre diario registrado.", "success");
+  } catch (err) {
+    console.error("No se pudo registrar el cierre diario:", err);
+    toast("No se pudo registrar el cierre diario en el sistema.", "error");
+  }
+
+  printAdHoc(`Cierre Diario — ${fechaFmt}`, bodyHTML, ["Departamento de Sistema", "Director"]);
+}
+
+function initCierreDiario() {
+  const fechaInput = document.getElementById("cierre-fecha");
+  const btn = document.getElementById("btn-generar-cierre");
+  if (fechaInput) fechaInput.value = new Date().toLocaleDateString("en-CA");
+  if (btn) btn.addEventListener("click", () => generarCierreDiario(fechaInput?.value));
+
+  ensureSubscribed(COLLECTIONS.CIERRES_DIARIOS, "fecha");
+  const root = document.getElementById("historial-cierres");
+  if (!root) return;
+  cierresHistorial = createHistorial({
+    root,
+    title: "Historial de Cierres Diarios",
+    dateField: "fecha",
+    getRows: () => dataCache[COLLECTIONS.CIERRES_DIARIOS] || [],
+    isAdmin: () => false,
+    exportFileName: "Cierres_Diarios",
+    firmas: ["Departamento de Sistema", "Director"],
+    columns: [
+      { key: "fechaStr", label: "Fecha del cierre" },
+      { key: "pacientes", label: "Pacientes", format: (r) => r.counts?.pacientesTotal ?? 0 },
+      { key: "traslados", label: "Traslados", format: (r) => r.counts?.traslados ?? 0 },
+      { key: "fallecidos", label: "Fallecidos", format: (r) => r.counts?.fallecidos ?? 0 },
+      { key: "litros", label: "Litros combustible", format: (r) => r.counts?.combustibleLitros ?? 0 },
+      { key: "responsable", label: "Generado por" },
+      { key: "createdAt", label: "Registrado", format: (r) => formatDate(r.createdAt, true) },
+    ],
+  });
+}
+
 export function initReportes() {
   const select = document.getElementById("reportes-select-modulo");
   if (select) {
@@ -207,8 +360,10 @@ export function initReportes() {
     Object.values(REPORTS).forEach((cfg) => ensureSubscribed(cfg.collection, cfg.dateField));
     document.getElementById("resumen-desde")?.addEventListener("change", renderResumenGeneral);
     document.getElementById("resumen-hasta")?.addEventListener("change", renderResumenGeneral);
+    initCierreDiario();
   }
 
   renderReport(select ? select.value : "pacientes");
   renderResumenGeneral();
+  if (cierresHistorial) cierresHistorial.render();
 }

@@ -3,20 +3,21 @@
  * -----------------------------------------------------------------------
  * Módulo de Hidrometeorología — Monitoreo del Río Limón.
  *
- * Provee:
- *  - Un dashboard en tiempo real (numérico + gráfico) del nivel del río,
- *    con estados de alerta visual (Normal / Advertencia / Alerta Roja)
- *    calculados según umbrales configurables por el administrador.
- *  - Una función asíncrona `consultarNivelExterno()` lista para integrarse
- *    con un endpoint/API externo (provisto por el usuario). Si no hay
- *    endpoint configurado, el sistema opera con registro manual de
- *    lecturas por parte del personal de guardia.
- *  - Historial de lecturas almacenado en Firestore para trazabilidad y
- *    graficado de tendencia.
+ * La estadística institucional es un índice de 0 a 9 (no metros). La
+ * información la nutre otra aplicación externa a través de una API: este
+ * módulo NO ofrece registro manual de lecturas, solo:
+ *  - Un dashboard en tiempo real (numérico + gráfico) con estados de
+ *    alerta visual (Normal / Advertencia / Alerta Roja) según umbrales
+ *    configurables por el administrador.
+ *  - `consultarNivelExterno()`, lista para integrarse con el endpoint/API
+ *    provisto por el usuario, que registra automáticamente cada lectura
+ *    obtenida.
+ *  - Historial de lecturas (trazabilidad) con impresión formal firmada
+ *    por el Responsable y el Director.
  * -----------------------------------------------------------------------
  */
 import { db, doc, getDoc, setDoc, serverTimestamp } from "./firebase.js";
-import { COLLECTIONS, UMBRALES_HIDRO_DEFAULT } from "./config.js";
+import { COLLECTIONS, UMBRALES_HIDRO_DEFAULT, NIVEL_HIDRO_MIN, NIVEL_HIDRO_MAX } from "./config.js";
 import { subscribeCollection, createRecord } from "./data.js";
 import { createHistorial, formatDate, toast } from "./ui.js";
 import { isAdmin, getCurrentUser, getResponsableLabel } from "./auth.js";
@@ -33,18 +34,14 @@ function calcularEstado(nivel) {
 }
 
 /**
- * Función asíncrona preparada para consumir un endpoint/API externo del
- * nivel del Río Limón (por ejemplo, un sensor telemétrico o un servicio de
- * hidrología). Se activa desde el botón "Consultar fuente externa".
- *
- * El usuario debe proveer `umbrales.apiEndpoint` (y opcionalmente
- * `apiKey`) desde el panel de configuración. Se espera una respuesta JSON
- * con, al menos, un campo numérico de nivel (se intenta detectar
- * automáticamente `nivel`, `level` o `value`).
+ * Función asíncrona preparada para consumir el endpoint/API externo que
+ * nutre el nivel del Río Limón (índice 0-9). Se invoca desde el botón
+ * "Consultar fuente externa" y, si hay un endpoint configurado, también
+ * al entrar a este módulo (mejor esfuerzo, en silencio).
  */
-async function consultarNivelExterno() {
+async function consultarNivelExterno({ silent = false } = {}) {
   if (!umbrales.apiEndpoint) {
-    toast("No hay un endpoint externo configurado. Registre una lectura manual o configure la API en Ajustes.", "warning");
+    if (!silent) toast("No hay un endpoint externo configurado. Pídale al administrador que lo configure en Ajustes.", "warning");
     return null;
   }
   try {
@@ -54,10 +51,10 @@ async function consultarNivelExterno() {
     const json = await res.json();
     const nivel = Number(json.nivel ?? json.level ?? json.value);
     if (isNaN(nivel)) throw new Error("La respuesta no contiene un nivel numérico reconocible.");
-    return nivel;
+    return Math.min(NIVEL_HIDRO_MAX, Math.max(NIVEL_HIDRO_MIN, Math.round(nivel)));
   } catch (err) {
     console.error("Error consultando fuente externa de hidrometeorología:", err);
-    toast("No se pudo consultar la fuente externa. Verifique el endpoint configurado.", "error");
+    if (!silent) toast("No se pudo consultar la fuente externa. Verifique el endpoint configurado.", "error");
     return null;
   }
 }
@@ -81,7 +78,7 @@ function renderDashboard() {
   const nivelEl = document.getElementById("hidro-nivel-actual");
   const badgeEl = document.getElementById("hidro-estado-badge");
   const fechaEl = document.getElementById("hidro-fecha-lectura");
-  if (nivelEl) nivelEl.textContent = nivel !== null ? `${nivel.toFixed(2)} m` : "— m";
+  if (nivelEl) nivelEl.textContent = nivel !== null ? `${nivel} / 9` : "—";
   if (fechaEl) fechaEl.textContent = ultima ? `Última lectura: ${formatDate(ultima.fecha, true)}` : "Sin lecturas registradas";
 
   const colorClasses = {
@@ -112,13 +109,14 @@ function renderChart() {
       labels,
       datasets: [
         {
-          label: "Nivel del Río Limón (m)",
+          label: "Nivel del Río Limón (0-9)",
           data,
           borderColor: "#C81E1E",
           backgroundColor: "rgba(200,30,30,0.1)",
           tension: 0.3,
           fill: true,
           pointRadius: 3,
+          stepped: false,
         },
       ],
     },
@@ -128,8 +126,10 @@ function renderChart() {
       scales: {
         y: {
           beginAtZero: true,
-          title: { display: true, text: "Metros" },
-          suggestedMax: Math.max(umbrales.alerta + 1, ...(data.length ? data : [1])),
+          min: NIVEL_HIDRO_MIN,
+          max: NIVEL_HIDRO_MAX,
+          ticks: { stepSize: 1 },
+          title: { display: true, text: "Nivel (0-9)" },
         },
       },
     },
@@ -137,9 +137,9 @@ function renderChart() {
 }
 
 function renderUmbralesUI() {
-  document.getElementById("hidro-umbral-normal-label")?.replaceChildren(document.createTextNode(`< ${umbrales.advertencia} m`));
-  document.getElementById("hidro-umbral-advertencia-label")?.replaceChildren(document.createTextNode(`${umbrales.advertencia} m – ${umbrales.alerta} m`));
-  document.getElementById("hidro-umbral-alerta-label")?.replaceChildren(document.createTextNode(`≥ ${umbrales.alerta} m`));
+  document.getElementById("hidro-umbral-normal-label")?.replaceChildren(document.createTextNode(`0 – ${umbrales.advertencia - 1}`));
+  document.getElementById("hidro-umbral-advertencia-label")?.replaceChildren(document.createTextNode(`${umbrales.advertencia} – ${umbrales.alerta - 1}`));
+  document.getElementById("hidro-umbral-alerta-label")?.replaceChildren(document.createTextNode(`${umbrales.alerta} – 9`));
 
   const configForm = document.getElementById("form-hidro-config");
   if (configForm) {
@@ -155,6 +155,12 @@ function renderUmbralesUI() {
 
 export function refreshHidrometeorologia() {
   renderDashboard();
+  // Mejor esfuerzo: si hay endpoint configurado, intenta actualizar el
+  // nivel automáticamente al entrar a la vista (la fuente la nutre otra
+  // aplicación, por lo que aquí no se espera intervención manual).
+  consultarNivelExterno({ silent: true }).then((nivel) => {
+    if (nivel !== null) registrarLectura(nivel, "API externa");
+  });
 }
 
 export async function initHidrometeorologia() {
@@ -178,7 +184,7 @@ export async function initHidrometeorologia() {
     title: "Historial de Lecturas — Río Limón",
     columns: [
       { key: "fecha", label: "Fecha/Hora", format: (r) => formatDate(r.fecha, true) },
-      { key: "nivel", label: "Nivel (m)" },
+      { key: "nivel", label: "Nivel (0-9)" },
       { key: "estado", label: "Estado" },
       { key: "fuente", label: "Fuente" },
       { key: "responsable", label: "Responsable" },
@@ -187,31 +193,17 @@ export async function initHidrometeorologia() {
     getRows: () => lecturas,
     isAdmin,
     exportFileName: "Lecturas_Rio_Limon",
+    firmas: ["Responsable", "Director"],
     // Las lecturas hidrometeorológicas son de solo lectura una vez
     // guardadas (registro instrumental); no se ofrece edición/eliminación
     // para preservar la integridad de la serie histórica.
   });
 
-  const formManual = document.getElementById("form-hidro-lectura");
-  if (formManual) {
-    formManual.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const nivel = Number(formManual.elements["nivel"].value);
-      if (isNaN(nivel)) {
-        toast("Ingrese un nivel numérico válido.", "error");
-        return;
-      }
-      await registrarLectura(nivel, "Manual");
-      toast("Lectura registrada.", "success");
-      formManual.reset();
-    });
-  }
-
   document.getElementById("btn-hidro-consultar")?.addEventListener("click", async () => {
     const nivel = await consultarNivelExterno();
     if (nivel !== null) {
       await registrarLectura(nivel, "API externa");
-      toast(`Nivel obtenido de la fuente externa: ${nivel} m.`, "success");
+      toast(`Nivel obtenido de la fuente externa: ${nivel} / 9.`, "success");
     }
   });
 
@@ -237,4 +229,9 @@ export async function initHidrometeorologia() {
       renderDashboard();
     });
   }
+
+  // Primer intento automático al cargar el módulo, si ya hay endpoint.
+  consultarNivelExterno({ silent: true }).then((nivel) => {
+    if (nivel !== null) registrarLectura(nivel, "API externa");
+  });
 }

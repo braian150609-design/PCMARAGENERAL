@@ -27,6 +27,7 @@ const APP_SHELL = [
   "./js/combustible.js",
   "./js/hidrometeorologia.js",
   "./js/educacion.js",
+  "./js/inspeccion.js",
   "./js/inventario.js",
   "./js/catalogos.js",
   "./js/reportes.js",
