@@ -231,54 +231,153 @@ function buildListaDiariaBodyHTML(fechaFmt, registro, insumosDia = []) {
 /* ---------------------------------------------------------------------- */
 const MOTIVO_USO_DIARIO = "Uso operativo / Consumo";
 let insumosUsados = [];
+// Lista temporal ("carrito") de insumos que se van agregando antes de
+// registrarlos todos juntos de una vez — así el operador no tiene que
+// repetir Fecha/Almacén/Responsable por cada insumo cuando usa muchos en
+// el día.
+let carritoInsumosUsados = []; // [{ insumoId, insumoNombre, cantidad }]
 
 function setupInsumosUsados() {
-  const form = document.getElementById("form-insumo-usado");
-  if (!form) return;
+  const fechaField = document.getElementById("insumo-usado-fecha");
+  const almacenSelect = document.getElementById("insumo-usado-almacen");
+  const respField = document.getElementById("insumo-usado-responsable");
+  const insumoSelect = document.getElementById("insumo-usado-select");
+  const cantidadField = document.getElementById("insumo-usado-cantidad");
+  const btnAgregar = document.getElementById("btn-agregar-insumo-usado");
+  const btnRegistrar = document.getElementById("btn-registrar-insumos-usados");
+  if (!fechaField || !btnAgregar || !btnRegistrar) return;
 
-  const fechaField = form.elements["fecha"];
-  const respField = form.elements["responsable"];
-  if (fechaField) fechaField.value = new Date().toLocaleDateString("en-CA");
-  if (respField) respField.value = getResponsableLabel();
+  fechaField.value = new Date().toLocaleDateString("en-CA");
+  respField.value = getResponsableLabel();
 
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const insumoSelect = form.elements["insumoId"];
-    const insumoOpt = insumoSelect.options[insumoSelect.selectedIndex];
-    const almacen = form.elements["almacenOrigen"].value;
-    const cantidad = Number(form.elements["cantidad"].value);
-    const responsable = form.elements["responsable"].value.trim();
-    const fecha = form.elements["fecha"].value;
-
-    if (!insumoOpt?.value || !almacen || !cantidad || cantidad <= 0) {
-      toast("Complete insumo, almacén y una cantidad válida.", "error");
+  // Agrega el insumo seleccionado a la lista pendiente (no toca Firestore
+  // todavía). Si el insumo ya estaba en la lista, suma la cantidad en vez
+  // de duplicar la fila.
+  btnAgregar.addEventListener("click", () => {
+    const opt = insumoSelect.options[insumoSelect.selectedIndex];
+    const cantidad = Number(cantidadField.value);
+    if (!opt?.value) {
+      toast("Seleccione un insumo.", "error");
+      return;
+    }
+    if (!cantidad || cantidad <= 0) {
+      toast("Ingrese una cantidad válida.", "error");
       return;
     }
 
+    const existente = carritoInsumosUsados.find((it) => it.insumoId === opt.value);
+    if (existente) {
+      existente.cantidad += cantidad;
+    } else {
+      carritoInsumosUsados.push({ insumoId: opt.value, insumoNombre: opt.dataset.nombre, cantidad });
+    }
+    renderCarritoInsumosUsados();
+
+    // Limpia el campo de cantidad y el buscador para agregar el siguiente
+    // insumo rápido, sin perder Fecha/Almacén/Responsable ya escritos.
+    cantidadField.value = "";
+    const searchInput = insumoSelect.parentElement?.querySelector(".insumo-search");
+    if (searchInput) {
+      searchInput.value = "";
+      searchInput.dispatchEvent(new Event("input"));
+    }
+    insumoSelect.value = "";
+    (searchInput || insumoSelect).focus();
+  });
+
+  // Registra TODOS los insumos de la lista pendiente de una sola vez.
+  btnRegistrar.addEventListener("click", async () => {
+    if (!carritoInsumosUsados.length) {
+      toast("Agregue al menos un insumo a la lista antes de registrar.", "error");
+      return;
+    }
+    const almacen = almacenSelect.value;
+    const responsable = respField.value.trim();
+    const fecha = fechaField.value;
+    if (!almacen) {
+      toast("Seleccione el almacén.", "error");
+      return;
+    }
+    if (!responsable) {
+      toast("Escriba el responsable.", "error");
+      return;
+    }
+
+    const defaultLabel = btnRegistrar.textContent;
+    btnRegistrar.disabled = true;
+    btnRegistrar.textContent = "Registrando...";
     try {
-      await registrarDebito({
-        insumoId: insumoOpt.value,
-        insumoNombre: insumoOpt.dataset.nombre,
-        almacen,
-        cantidad,
-        motivo: MOTIVO_USO_DIARIO,
-        responsable,
-        observaciones: "Insumo utilizado — Lista Diaria de Pacientes",
-        fecha,
-      });
-      toast("Insumo utilizado registrado y descontado del inventario.", "success");
-      form.reset();
-      if (fechaField) fechaField.value = new Date().toLocaleDateString("en-CA");
-      if (respField) respField.value = getResponsableLabel();
+      for (const item of carritoInsumosUsados) {
+        await registrarDebito({
+          insumoId: item.insumoId,
+          insumoNombre: item.insumoNombre,
+          almacen,
+          cantidad: item.cantidad,
+          motivo: MOTIVO_USO_DIARIO,
+          responsable,
+          observaciones: "Insumo utilizado — Lista Diaria de Pacientes",
+          fecha,
+        });
+      }
+      toast(`${carritoInsumosUsados.length} insumo(s) registrados y descontados del inventario.`, "success");
+      carritoInsumosUsados = [];
+      renderCarritoInsumosUsados();
+      fechaField.value = new Date().toLocaleDateString("en-CA");
+      respField.value = getResponsableLabel();
     } catch (err) {
       console.error(err);
-      toast(err.message || "No se pudo registrar el insumo utilizado.", "error");
+      toast(err.message || "Ocurrió un error registrando los insumos. Revise la lista e intente de nuevo.", "error");
+    } finally {
+      btnRegistrar.disabled = false;
+      btnRegistrar.textContent = defaultLabel;
     }
   });
+
+  renderCarritoInsumosUsados();
 
   subscribeCollection(COLLECTIONS.DEBITOS_INVENTARIO, "fecha", (rows) => {
     insumosUsados = rows;
     renderInsumosUsadosTable();
+  });
+}
+
+function renderCarritoInsumosUsados() {
+  const root = document.getElementById("carrito-insumos-usados");
+  if (!root) return;
+
+  if (!carritoInsumosUsados.length) {
+    root.innerHTML = `<p class="text-xs text-slate-400 italic">Aún no ha agregado insumos a la lista.</p>`;
+    return;
+  }
+
+  root.innerHTML = `
+    <table class="min-w-full text-sm border border-slate-200 rounded-md overflow-hidden">
+      <thead class="bg-slate-50 text-slate-600">
+        <tr>
+          <th class="text-left font-medium px-3 py-1.5">Insumo</th>
+          <th class="text-left font-medium px-3 py-1.5">Cantidad</th>
+          <th class="px-3 py-1.5"></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${carritoInsumosUsados
+          .map(
+            (item, i) => `
+        <tr class="border-t border-slate-100">
+          <td class="px-3 py-1.5">${escapeHTML(item.insumoNombre)}</td>
+          <td class="px-3 py-1.5">${item.cantidad}</td>
+          <td class="px-3 py-1.5 text-right"><button type="button" data-idx="${i}" class="text-red-700 hover:underline text-xs">Quitar</button></td>
+        </tr>`
+          )
+          .join("")}
+      </tbody>
+    </table>`;
+
+  root.querySelectorAll("[data-idx]").forEach((btn) => {
+    btn.onclick = () => {
+      carritoInsumosUsados.splice(Number(btn.dataset.idx), 1);
+      renderCarritoInsumosUsados();
+    };
   });
 }
 
