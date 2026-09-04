@@ -291,6 +291,9 @@ function renderInsumosUsadosTable() {
   );
   const admin = isAdmin();
 
+  const countBadge = document.getElementById("insumos-usados-count");
+  if (countBadge) countBadge.textContent = rows.length ? `${rows.length} hoy` : "sin registros hoy";
+
   root.innerHTML = `
     <table class="min-w-full text-sm">
       <thead class="bg-slate-50 text-slate-600">

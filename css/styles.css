@@ -7,6 +7,22 @@
  * -----------------------------------------------------------------------
  */
 
+/* --------------------------- Desplegables (details) ---------------------- */
+/* display:flex en <summary> quita la flechita nativa del navegador; se */
+/* reemplaza por un chevron propio que rota al abrir. */
+details > summary {
+  list-style: none;
+}
+details > summary::-webkit-details-marker {
+  display: none;
+}
+details .chevron {
+  transition: transform 0.15s ease;
+}
+details[open] > summary .chevron {
+  transform: rotate(90deg);
+}
+
 /* ---------------------------- Navegación -------------------------------- */
 .nav-link {
   display: block;
