@@ -3,13 +3,15 @@
  * -----------------------------------------------------------------------
  * Módulo Unificado de Operaciones de Emergencia: agrupa las tres
  * sub-secciones que alimentan las estadísticas diarias del sistema:
- *   - Lista Diaria de Pacientes (reemplaza el antiguo registro individual
- *     de pacientes: se agregan a una lista del día y se imprime un
- *     documento formal con el conteo de niños/adolescentes/adultos más
- *     traslados y fallecidos del mismo día, firmado por el Jefe de
- *     Departamento y el Director).
+ *   - Lista Diaria de Pacientes: UNA planilla por día (no un registro por
+ *     paciente). Se escriben directamente las cantidades atendidas (Niños,
+ *     Adolescentes, Adultos, Traslados, Fallecidos) y el responsable del
+ *     día (ej. "Doctora Isbelia"). Las cantidades de Traslados y
+ *     Fallecidos aquí son un conteo manual propio de esta planilla — son
+ *     independientes de los módulos de Traslados y Fallecidos (que llevan
+ *     su propio registro detallado, sin relación con esta lista).
  *   - Traslados (con cédula, edad y nombre del paciente trasladado).
- *   - Fallecidos.
+ *   - Fallecidos (nombre, cédula, edad, sexo, fecha, hora, lugar, causa).
  * La Lista Diaria también permite registrar los Insumos utilizados el día
  * (se descuentan del inventario como un débito — ver inventario.js — y se
  * incluyen en el documento impreso de la lista).
@@ -40,14 +42,25 @@ export function initEmergencias() {
     form: document.getElementById("form-pacientes"),
     historialRoot: document.getElementById("historial-pacientes"),
     dateField: "fecha",
-    historialTitle: "Lista Diaria de Pacientes Atendidos",
+    historialTitle: "Listas Diarias de Pacientes Atendidos",
     firmas: ["Jefe de Departamento", "Director"],
     columns: [
       { key: "fecha", label: "Fecha", format: (r) => formatDate(r.fecha) },
-      { key: "categoriaEdad", label: "Categoría" },
-      { key: "genero", label: "Género" },
-      { key: "responsable", label: "Responsable" },
+      { key: "ninos", label: "Niños" },
+      { key: "adolescentes", label: "Adolescentes" },
+      { key: "adultos", label: "Adultos" },
+      { key: "cantidadTraslados", label: "Traslados" },
+      { key: "cantidadFallecidos", label: "Fallecidos" },
+      { key: "responsable", label: "Responsable del día" },
     ],
+    beforeSave: (data) => {
+      data.ninos = Number(data.ninos) || 0;
+      data.adolescentes = Number(data.adolescentes) || 0;
+      data.adultos = Number(data.adultos) || 0;
+      data.cantidadTraslados = Number(data.cantidadTraslados) || 0;
+      data.cantidadFallecidos = Number(data.cantidadFallecidos) || 0;
+      return data;
+    },
   });
 
   const traslados = createCrudModule({
@@ -76,12 +89,20 @@ export function initEmergencias() {
     dateField: "fecha",
     historialTitle: "Historial de Fallecidos",
     columns: [
-      { key: "fecha", label: "Fecha/Hora", format: (r) => formatDate(r.fecha, true) },
-      { key: "datosControl", label: "Datos de control" },
-      { key: "causaPresunta", label: "Causa presunta" },
-      { key: "ubicacion", label: "Ubicación" },
+      { key: "fecha", label: "Fecha", format: (r) => formatDate(r.fecha) },
+      { key: "hora", label: "Hora" },
+      { key: "nombre", label: "Nombre" },
+      { key: "cedula", label: "Cédula" },
+      { key: "edad", label: "Edad" },
+      { key: "sexo", label: "Sexo" },
+      { key: "lugar", label: "Lugar de fallecimiento" },
+      { key: "causa", label: "Causa / Circunstancia" },
       { key: "responsable", label: "Responsable" },
     ],
+    beforeSave: (data) => {
+      data.edad = Number(data.edad) || 0;
+      return data;
+    },
   });
 
   // Mostrar/ocultar campo "Centro de destino" según el tipo de traslado.
@@ -94,7 +115,7 @@ export function initEmergencias() {
   }
 
   modules = { pacientes, traslados, fallecidos };
-  setupListaDiaria(modules);
+  setupListaDiaria(pacientes);
   setupInsumosUsados();
   return modules;
 }
@@ -104,9 +125,9 @@ export function getEmergenciasModules() {
 }
 
 /* ---------------------------------------------------------------------- */
-/* Lista Diaria de Pacientes: generación del documento imprimible          */
+/* Lista Diaria de Pacientes: impresión formal de la planilla del día      */
 /* ---------------------------------------------------------------------- */
-function setupListaDiaria({ pacientes, traslados, fallecidos }) {
+function setupListaDiaria(pacientes) {
   const fechaInput = document.getElementById("lista-diaria-fecha");
   const btn = document.getElementById("btn-imprimir-lista-diaria");
   if (!fechaInput || !btn) return;
@@ -117,23 +138,17 @@ function setupListaDiaria({ pacientes, traslados, fallecidos }) {
   btn.addEventListener("click", () => {
     const dateStr = fechaInput.value;
     if (!dateStr) {
-      toast("Seleccione la fecha de la lista a generar.", "error");
+      toast("Seleccione la fecha de la lista a imprimir.", "error");
       return;
     }
     const sameDay = (row) => toDate(row.fecha)?.toLocaleDateString("en-CA") === dateStr;
 
-    const pacientesDia = pacientes.getRows().filter(sameDay);
-    const trasladosDia = traslados.getRows().filter(sameDay);
-    const fallecidosDia = fallecidos.getRows().filter(sameDay);
+    const registro = pacientes.getRows().find(sameDay);
+    if (!registro) {
+      toast("No hay una lista diaria guardada para esa fecha. Agréguela primero en el formulario de arriba.", "error");
+      return;
+    }
     const insumosDia = insumosUsados.filter((r) => r.motivo === MOTIVO_USO_DIARIO && sameDay(r));
-
-    const counts = {
-      ninos: pacientesDia.filter((p) => p.categoriaEdad === "Niño").length,
-      adolescentes: pacientesDia.filter((p) => p.categoriaEdad === "Adolescente").length,
-      adultos: pacientesDia.filter((p) => p.categoriaEdad === "Adulto").length,
-      traslados: trasladosDia.length,
-      fallecidos: fallecidosDia.length,
-    };
 
     const fechaFmt = new Date(dateStr + "T00:00:00").toLocaleDateString("es-VE", {
       day: "2-digit",
@@ -143,7 +158,7 @@ function setupListaDiaria({ pacientes, traslados, fallecidos }) {
 
     printAdHoc(
       `Lista Diaria de Pacientes — ${fechaFmt}`,
-      buildListaDiariaBodyHTML(fechaFmt, pacientesDia, counts, insumosDia),
+      buildListaDiariaBodyHTML(fechaFmt, registro, insumosDia),
       ["Jefe de Departamento", "Director"]
     );
   });
@@ -152,21 +167,7 @@ function setupListaDiaria({ pacientes, traslados, fallecidos }) {
 const cellStyle = "border:1px solid #cbd5e1;padding:5px 7px;";
 const headStyle = `${cellStyle}background:#f1f5f9;font-weight:bold;`;
 
-function buildListaDiariaBodyHTML(fechaFmt, pacientesDia, counts, insumosDia = []) {
-  const rows =
-    pacientesDia
-      .map(
-        (p, i) => `
-      <tr>
-        <td style="${cellStyle}">${i + 1}</td>
-        <td style="${cellStyle}">${escapeHTML(p.categoriaEdad)}</td>
-        <td style="${cellStyle}">${escapeHTML(p.genero)}</td>
-        <td style="${cellStyle}">${escapeHTML(p.responsable)}</td>
-      </tr>`
-      )
-      .join("") ||
-    `<tr><td colspan="4" style="${cellStyle}text-align:center;color:#94a3b8;">Sin pacientes registrados en esta fecha.</td></tr>`;
-
+function buildListaDiariaBodyHTML(fechaFmt, registro, insumosDia = []) {
   const insumosRows =
     insumosDia
       .map(
@@ -185,7 +186,8 @@ function buildListaDiariaBodyHTML(fechaFmt, pacientesDia, counts, insumosDia = [
   return `
     <div style="padding:12px 20px 4px;font-family:Arial,Helvetica,sans-serif;color:#1e293b;">
       <h2 style="text-align:center;font-size:15px;margin:6px 0 4px;">LISTA DIARIA DE PACIENTES ATENDIDOS</h2>
-      <p style="text-align:center;font-size:11px;margin:0 0 14px;color:#475569;">Fecha: ${fechaFmt}</p>
+      <p style="text-align:center;font-size:11px;margin:0 0 4px;color:#475569;">Fecha: ${fechaFmt}</p>
+      <p style="text-align:center;font-size:11px;margin:0 0 14px;color:#475569;">Responsable del día: <strong>${escapeHTML(registro.responsable)}</strong></p>
 
       <table style="width:100%;border-collapse:collapse;margin-bottom:18px;font-size:10.5px;text-align:center;">
         <thead>
@@ -199,25 +201,13 @@ function buildListaDiariaBodyHTML(fechaFmt, pacientesDia, counts, insumosDia = [
         </thead>
         <tbody>
           <tr style="font-weight:bold;">
-            <td style="${cellStyle}">${counts.ninos}</td>
-            <td style="${cellStyle}">${counts.adolescentes}</td>
-            <td style="${cellStyle}">${counts.adultos}</td>
-            <td style="${cellStyle}">${counts.traslados}</td>
-            <td style="${cellStyle}">${counts.fallecidos}</td>
+            <td style="${cellStyle}">${registro.ninos ?? 0}</td>
+            <td style="${cellStyle}">${registro.adolescentes ?? 0}</td>
+            <td style="${cellStyle}">${registro.adultos ?? 0}</td>
+            <td style="${cellStyle}">${registro.cantidadTraslados ?? 0}</td>
+            <td style="${cellStyle}">${registro.cantidadFallecidos ?? 0}</td>
           </tr>
         </tbody>
-      </table>
-
-      <table style="width:100%;border-collapse:collapse;font-size:10px;">
-        <thead>
-          <tr>
-            <th style="${headStyle}">#</th>
-            <th style="${headStyle}">Categoría</th>
-            <th style="${headStyle}">Género</th>
-            <th style="${headStyle}">Responsable</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
       </table>
 
       <h3 style="font-size:12px;margin:18px 0 6px;">Insumos utilizados</h3>

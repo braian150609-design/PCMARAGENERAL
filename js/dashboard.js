@@ -57,24 +57,38 @@ function setMetric(prefix, counts) {
   if (anioEl) anioEl.textContent = counts.anio;
 }
 
-function litrosByPeriod(rows) {
+function sumByPeriod(rows, valueFn, dateField = "fecha") {
   const now = new Date();
   let hoy = 0,
     mes = 0,
     anio = 0;
   rows.forEach((r) => {
-    const d = toDate(r.fecha);
+    const d = toDate(r[dateField]);
     if (!d) return;
-    const litros = Number(r.litros) || 0;
-    if (isSameDay(d, now)) hoy += litros;
-    if (isSameMonth(d, now)) mes += litros;
-    if (isSameYear(d, now)) anio += litros;
+    const v = valueFn(r);
+    if (isSameDay(d, now)) hoy += v;
+    if (isSameMonth(d, now)) mes += v;
+    if (isSameYear(d, now)) anio += v;
   });
   return { hoy, mes, anio };
 }
 
+function litrosByPeriod(rows) {
+  return sumByPeriod(rows, (r) => Number(r.litros) || 0);
+}
+
+// La Lista Diaria de Pacientes es UNA planilla por día (no un registro por
+// paciente): las cantidades ya vienen guardadas como campos numéricos, hay
+// que sumarlas en vez de contar documentos.
+function personasPlanilla(r) {
+  return (Number(r.ninos) || 0) + (Number(r.adolescentes) || 0) + (Number(r.adultos) || 0);
+}
+function pacientesPorPeriodo(rows) {
+  return sumByPeriod(rows, personasPlanilla);
+}
+
 function renderMetrics() {
-  setMetric("pacientes", countByPeriod(state.pacientes));
+  setMetric("pacientes", pacientesPorPeriodo(state.pacientes));
   setMetric("traslados", countByPeriod(state.traslados));
   setMetric("fallecidos", countByPeriod(state.fallecidos));
   setMetric("guardias", countByPeriod(state.guardias));
@@ -96,14 +110,14 @@ function last6MonthsLabels() {
   return labels;
 }
 
-function monthlySeries(rows, dateField = "fecha") {
+function monthlySeries(rows, dateField = "fecha", valueFn = () => 1) {
   const months = last6MonthsLabels();
   const counts = Object.fromEntries(months.map((m) => [m.key, 0]));
   rows.forEach((r) => {
     const d = toDate(r[dateField]);
     if (!d) return;
     const key = `${d.getFullYear()}-${d.getMonth()}`;
-    if (key in counts) counts[key]++;
+    if (key in counts) counts[key] += valueFn(r);
   });
   return { labels: months.map((m) => m.label), data: months.map((m) => counts[m.key]) };
 }
@@ -113,7 +127,7 @@ function renderCharts() {
 
   const trendCanvas = document.getElementById("chart-tendencia");
   if (trendCanvas) {
-    const p = monthlySeries(state.pacientes);
+    const p = monthlySeries(state.pacientes, "fecha", personasPlanilla);
     const t = monthlySeries(state.traslados);
     const g = monthlySeries(state.guardias);
     charts.tendencia?.destroy();
@@ -140,7 +154,13 @@ function renderCharts() {
         labels: ["Pacientes", "Traslados", "Fallecidos", "Guardias", "Educación"],
         datasets: [
           {
-            data: [state.pacientes.length, state.traslados.length, state.fallecidos.length, state.guardias.length, state.educacion.length],
+            data: [
+              state.pacientes.reduce((s, r) => s + personasPlanilla(r), 0),
+              state.traslados.length,
+              state.fallecidos.length,
+              state.guardias.length,
+              state.educacion.length,
+            ],
             backgroundColor: ["#0B2545", "#64748B", "#C81E1E", "#1D4E89", "#94A3B8"],
           },
         ],

@@ -31,9 +31,12 @@ const REPORTS = {
     dateField: "fecha",
     columns: [
       { key: "fecha", label: "Fecha", format: (r) => formatDate(r.fecha) },
-      { key: "categoriaEdad", label: "Categoría" },
-      { key: "genero", label: "Género" },
-      { key: "responsable", label: "Responsable" },
+      { key: "ninos", label: "Niños" },
+      { key: "adolescentes", label: "Adolescentes" },
+      { key: "adultos", label: "Adultos" },
+      { key: "cantidadTraslados", label: "Traslados" },
+      { key: "cantidadFallecidos", label: "Fallecidos" },
+      { key: "responsable", label: "Responsable del día" },
     ],
   },
   traslados: {
@@ -55,9 +58,14 @@ const REPORTS = {
     collection: COLLECTIONS.FALLECIDOS,
     dateField: "fecha",
     columns: [
-      { key: "fecha", label: "Fecha/Hora", format: (r) => formatDate(r.fecha, true) },
-      { key: "datosControl", label: "Datos de control" },
-      { key: "causaPresunta", label: "Causa presunta" },
+      { key: "fecha", label: "Fecha", format: (r) => formatDate(r.fecha) },
+      { key: "hora", label: "Hora" },
+      { key: "nombre", label: "Nombre" },
+      { key: "cedula", label: "Cédula" },
+      { key: "edad", label: "Edad" },
+      { key: "sexo", label: "Sexo" },
+      { key: "lugar", label: "Lugar" },
+      { key: "causa", label: "Causa / Circunstancia" },
       { key: "responsable", label: "Responsable" },
     ],
   },
@@ -258,11 +266,20 @@ function computeCierreCounts(dateStr) {
   const transferencias = (dataCache[COLLECTIONS.TRANSFERENCIAS_INVENTARIO] || []).filter((r) => sameDate(r, "fecha", dateStr));
   const debitos = (dataCache[COLLECTIONS.DEBITOS_INVENTARIO] || []).filter((r) => sameDate(r, "fecha", dateStr));
 
+  // La Lista Diaria de Pacientes es una planilla por día (no un registro
+  // por paciente): las cantidades ya vienen guardadas como campos
+  // numéricos en cada documento; se suman por si hubiera más de una
+  // planilla para la misma fecha.
+  const sumField = (rows, field) => rows.reduce((s, r) => s + (Number(r[field]) || 0), 0);
+  const ninos = sumField(pacientes, "ninos");
+  const adolescentes = sumField(pacientes, "adolescentes");
+  const adultos = sumField(pacientes, "adultos");
+
   return {
-    pacientesTotal: pacientes.length,
-    ninos: pacientes.filter((p) => p.categoriaEdad === "Niño").length,
-    adolescentes: pacientes.filter((p) => p.categoriaEdad === "Adolescente").length,
-    adultos: pacientes.filter((p) => p.categoriaEdad === "Adulto").length,
+    pacientesTotal: ninos + adolescentes + adultos,
+    ninos,
+    adolescentes,
+    adultos,
     traslados: traslados.length,
     fallecidos: fallecidos.length,
     guardias: guardias.length,

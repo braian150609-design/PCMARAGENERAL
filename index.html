@@ -169,20 +169,20 @@
 
         <div id="panel-pacientes" class="subtab-panel space-y-4">
           <form id="form-pacientes" class="form-card">
-            <h3 class="font-semibold text-slate-700 mb-2">Agregar paciente a la lista del día</h3>
+            <h3 class="font-semibold text-slate-700 mb-1">Lista Diaria de Pacientes Atendidos</h3>
+            <p class="text-xs text-slate-500 mb-3">Una planilla por día: escriba las cantidades totales atendidas y el responsable del día.</p>
             <div class="form-grid">
               <div><label class="form-label">Fecha</label><input required type="date" name="fecha" class="form-input" /></div>
-              <div><label class="form-label">Categoría de edad</label>
-                <select required name="categoriaEdad" class="form-input"><option value="">Seleccione...</option><option>Niño</option><option>Adolescente</option><option>Adulto</option></select>
-              </div>
-              <div><label class="form-label">Género</label>
-                <select required name="genero" class="form-input"><option value="">Seleccione...</option><option>Masculino</option><option>Femenino</option></select>
-              </div>
-              <div><label class="form-label">Responsable</label><input required type="text" name="responsable" class="form-input" /></div>
+              <div><label class="form-label">Niños</label><input required type="number" min="0" value="0" name="ninos" class="form-input" /></div>
+              <div><label class="form-label">Adolescentes</label><input required type="number" min="0" value="0" name="adolescentes" class="form-input" /></div>
+              <div><label class="form-label">Adultos</label><input required type="number" min="0" value="0" name="adultos" class="form-input" /></div>
+              <div><label class="form-label">Traslados</label><input required type="number" min="0" value="0" name="cantidadTraslados" class="form-input" /></div>
+              <div><label class="form-label">Fallecidos</label><input required type="number" min="0" value="0" name="cantidadFallecidos" class="form-input" /></div>
+              <div><label class="form-label">Responsable del día</label><input required type="text" name="responsable" class="form-input" placeholder="Ej. Doctora Isbelia" /></div>
             </div>
             <div class="form-actions">
               <button type="button" data-role="cancel-edit" class="btn-secondary">Cancelar edición</button>
-              <button type="submit" class="btn-primary">Agregar a la lista</button>
+              <button type="submit" class="btn-primary">Guardar lista del día</button>
             </div>
           </form>
 
@@ -238,12 +238,15 @@
         <div id="panel-fallecidos" class="subtab-panel hidden space-y-4">
           <form id="form-fallecidos" class="form-card">
             <div class="form-grid">
-              <div><label class="form-label">Fecha / Hora</label><input required type="datetime-local" name="fecha" class="form-input" /></div>
-              <div><label class="form-label">Datos básicos de control / Registro</label><input required type="text" name="datosControl" class="form-input" /></div>
-              <div><label class="form-label">Causa presunta</label><input required type="text" name="causaPresunta" class="form-input" /></div>
-              <div><label class="form-label">Ubicación del levantamiento/atención</label><input required type="text" name="ubicacion" class="form-input" /></div>
+              <div><label class="form-label">Nombre</label><input required type="text" name="nombre" class="form-input" /></div>
+              <div><label class="form-label">Cédula</label><input required type="text" name="cedula" class="form-input" /></div>
+              <div><label class="form-label">Edad</label><input required type="number" min="0" name="edad" class="form-input" /></div>
+              <div><label class="form-label">Sexo</label><select required name="sexo" class="form-input"><option value="">Seleccione...</option><option>Masculino</option><option>Femenino</option></select></div>
+              <div><label class="form-label">Fecha</label><input required type="date" name="fecha" class="form-input" /></div>
+              <div><label class="form-label">Hora</label><input required type="time" name="hora" class="form-input" /></div>
+              <div><label class="form-label">Lugar de fallecimiento</label><input required type="text" name="lugar" class="form-input" /></div>
+              <div class="md:col-span-2"><label class="form-label">Causa o circunstancia</label><input required type="text" name="causa" class="form-input" /></div>
               <div><label class="form-label">Responsable</label><input required type="text" name="responsable" class="form-input" /></div>
-              <div class="md:col-span-3"><label class="form-label">Observaciones</label><textarea name="observaciones" class="form-input" rows="2"></textarea></div>
             </div>
             <div class="form-actions">
               <button type="button" data-role="cancel-edit" class="btn-secondary">Cancelar edición</button>
