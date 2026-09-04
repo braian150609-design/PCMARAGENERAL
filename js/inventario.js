@@ -1,0 +1,487 @@
+/**
+ * inventario.js
+ * -----------------------------------------------------------------------
+ * Módulo de Inventario e Insumos con cuatro ubicaciones/stocks
+ * independientes (Depósito, Módulo, Oficina, Ambulancia) que NUNCA se
+ * mezclan entre sí.
+ *
+ * Estructura de datos en Firestore:
+ *  - insumos/{id}            → catálogo maestro de insumos (nombre + categoría fija)
+ *  - insumoStock/{insumoId__almacen} → existencia y mínimo crítico POR insumo y POR almacén
+ *  - entradasInventario/{id} → ingresos (donación/compra) hacia un almacén
+ *  - transferenciasInventario/{id} → movimientos entre dos almacenes
+ *
+ * Las entradas y transferencias actualizan `insumoStock` de forma atómica
+ * mediante transacciones de Firestore para evitar condiciones de carrera
+ * cuando varios operadores registran movimientos simultáneamente.
+ *
+ * Nota de diseño: por tratarse de movimientos de existencias (no de datos
+ * descriptivos), la edición de una entrada/transferencia ya registrada no
+ * está disponible ni para el administrador, ya que alteraría el historial
+ * de trazabilidad de las cantidades. El administrador sí puede ELIMINAR un
+ * movimiento; al hacerlo, el sistema revierte automáticamente el efecto
+ * sobre las existencias para mantener la consistencia del stock.
+ * -----------------------------------------------------------------------
+ */
+import {
+  db,
+  doc,
+  runTransaction,
+  serverTimestamp,
+  collection,
+  addDoc,
+  updateDoc,
+} from "./firebase.js";
+import { COLLECTIONS, ALMACENES } from "./config.js";
+import { subscribeCollection, createRecord, deleteRecord } from "./data.js";
+import { getCategoriasInsumos, onCategoriasInsumosChange } from "./catalogos.js";
+import { toast, confirmDialog, createHistorial, formatDate, parseLocalDate } from "./ui.js";
+import { isAdmin, getCurrentUser, getResponsableLabel } from "./auth.js";
+
+let insumos = [];
+let stock = []; // filas de insumoStock
+let entradas = [];
+let transferencias = [];
+
+function stockDocId(insumoId, almacen) {
+  return `${insumoId}__${encodeURIComponent(almacen)}`;
+}
+
+export function getInsumos() {
+  return insumos;
+}
+export function getStock() {
+  return stock;
+}
+
+export function initInventario() {
+  // Tabs internos.
+  const tabs = document.querySelectorAll("#view-inventario .subtab-btn");
+  tabs.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("#view-inventario .subtab-panel").forEach((p) => p.classList.add("hidden"));
+      document.getElementById(`panel-${btn.dataset.subtab}`).classList.remove("hidden");
+      tabs.forEach((b) => b.classList.toggle("subtab-active", b === btn));
+    });
+  });
+
+  populateAlmacenSelects();
+  setupInsumoForm();
+  setupEntradaForm();
+  setupTransferenciaForm();
+
+  subscribeCollection(COLLECTIONS.INSUMOS, "nombre", (rows) => {
+    insumos = rows;
+    renderInsumosTable();
+    populateInsumoSelects();
+  });
+
+  subscribeCollection(COLLECTIONS.INSUMO_STOCK, "insumoNombre", (rows) => {
+    stock = rows;
+    renderStockTable();
+  });
+
+  entradasHistorial = subscribeCollection(COLLECTIONS.ENTRADAS_INVENTARIO, "fecha", (rows) => {
+    entradas = rows;
+    entradasHistorialCmp.render();
+  });
+
+  transferenciasHistorial = subscribeCollection(COLLECTIONS.TRANSFERENCIAS_INVENTARIO, "fecha", (rows) => {
+    transferencias = rows;
+    transferenciasHistorialCmp.render();
+  });
+
+  entradasHistorialCmp = createHistorial({
+    root: document.getElementById("historial-entradas"),
+    title: "Historial de Entradas de Inventario",
+    columns: [
+      { key: "fecha", label: "Fecha", format: (r) => formatDate(r.fecha) },
+      { key: "insumoNombre", label: "Insumo" },
+      { key: "cantidad", label: "Cantidad" },
+      { key: "almacenDestino", label: "Destino" },
+      { key: "responsable", label: "Responsable" },
+    ],
+    dateField: "fecha",
+    getRows: () => entradas,
+    isAdmin,
+    exportFileName: "Entradas_Inventario",
+    onDelete: (row) => deleteEntrada(row),
+  });
+
+  transferenciasHistorialCmp = createHistorial({
+    root: document.getElementById("historial-transferencias"),
+    title: "Historial de Transferencias entre Stocks",
+    columns: [
+      { key: "fecha", label: "Fecha", format: (r) => formatDate(r.fecha) },
+      { key: "insumoNombre", label: "Insumo" },
+      { key: "stockOrigen", label: "Origen" },
+      { key: "stockDestino", label: "Destino" },
+      { key: "cantidad", label: "Cantidad" },
+      { key: "responsable", label: "Responsable" },
+    ],
+    dateField: "fecha",
+    getRows: () => transferencias,
+    isAdmin,
+    exportFileName: "Transferencias_Inventario",
+    onDelete: (row) => deleteTransferencia(row),
+  });
+
+  onCategoriasInsumosChange(() => populateCategoriaInsumoSelect());
+  populateCategoriaInsumoSelect();
+}
+
+let entradasHistorial, transferenciasHistorial, entradasHistorialCmp, transferenciasHistorialCmp;
+
+/* --------------------------- Selects auxiliares ------------------------ */
+
+function populateAlmacenSelects() {
+  document.querySelectorAll("select.select-almacen").forEach((sel) => {
+    sel.innerHTML = ALMACENES.map((a) => `<option value="${a}">${a}</option>`).join("");
+  });
+  const filtroAlmacen = document.getElementById("stock-filtro-almacen");
+  if (filtroAlmacen) {
+    filtroAlmacen.innerHTML = `<option value="">Todos los almacenes</option>` + ALMACENES.map((a) => `<option value="${a}">${a}</option>`).join("");
+    filtroAlmacen.addEventListener("change", renderStockTable);
+  }
+}
+
+function populateCategoriaInsumoSelect() {
+  const sel = document.getElementById("insumo-categoria");
+  if (!sel) return;
+  const cats = getCategoriasInsumos().filter((c) => c.activo !== false);
+  sel.innerHTML = `<option value="">Seleccione categoría...</option>` + cats.map((c) => `<option value="${c.id}" data-nombre="${c.nombre}">${c.nombre}</option>`).join("");
+}
+
+function populateInsumoSelects() {
+  document.querySelectorAll("select.select-insumo").forEach((sel) => {
+    const activos = insumos.filter((i) => i.activo !== false);
+    sel.innerHTML =
+      `<option value="">Seleccione insumo...</option>` +
+      activos.map((i) => `<option value="${i.id}" data-nombre="${i.nombre}">${i.nombre} (${i.categoriaNombre})</option>`).join("");
+  });
+}
+
+/* ------------------------------ Insumos -------------------------------- */
+
+function setupInsumoForm() {
+  const form = document.getElementById("form-insumo");
+  if (!form) return;
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const nombre = form.elements["nombre"].value.trim();
+    const catSelect = form.elements["categoriaId"];
+    const opt = catSelect.options[catSelect.selectedIndex];
+    if (!nombre || !opt?.value) {
+      toast("Complete el nombre y la categoría del insumo.", "error");
+      return;
+    }
+    try {
+      await createRecord(COLLECTIONS.INSUMOS, {
+        nombre,
+        categoriaId: opt.value,
+        categoriaNombre: opt.dataset.nombre,
+        activo: true,
+      });
+      toast("Insumo agregado al catálogo.", "success");
+      form.reset();
+    } catch (err) {
+      console.error(err);
+    }
+  });
+}
+
+function renderInsumosTable() {
+  const tbody = document.getElementById("tabla-insumos-body");
+  if (!tbody) return;
+  const admin = isAdmin();
+  tbody.innerHTML =
+    insumos
+      .map(
+        (i) => `
+      <tr class="border-t border-slate-100">
+        <td class="px-4 py-2">${i.nombre}</td>
+        <td class="px-4 py-2">${i.categoriaNombre}</td>
+        <td class="px-4 py-2">${i.activo === false ? '<span class="text-red-600">Inactivo</span>' : '<span class="text-emerald-600">Activo</span>'}</td>
+        <td class="px-4 py-2">${admin ? `<button data-id="${i.id}" class="text-red-700 hover:underline" data-act="del">Eliminar</button>` : "—"}</td>
+      </tr>`
+      )
+      .join("") || `<tr><td colspan="4" class="px-4 py-6 text-center text-slate-400">Catálogo vacío.</td></tr>`;
+
+  if (admin) {
+    tbody.querySelectorAll('[data-act="del"]').forEach((btn) => {
+      btn.onclick = async () => {
+        const ok = await confirmDialog({ title: "Eliminar insumo", message: "¿Eliminar este insumo del catálogo? Las existencias registradas no se verán afectadas." });
+        if (ok) deleteRecord(COLLECTIONS.INSUMOS, btn.dataset.id);
+      };
+    });
+  }
+}
+
+/* ------------------------------ Existencias ----------------------------- */
+
+function renderStockTable() {
+  const tbody = document.getElementById("tabla-stock-body");
+  if (!tbody) return;
+  const filtro = document.getElementById("stock-filtro-almacen")?.value || "";
+  const admin = isAdmin();
+  const rows = stock.filter((s) => !filtro || s.almacen === filtro).sort((a, b) => (a.insumoNombre || "").localeCompare(b.insumoNombre || ""));
+
+  tbody.innerHTML =
+    rows
+      .map((s) => {
+        const critico = Number(s.existencia) <= Number(s.minimo ?? 0);
+        return `
+      <tr class="border-t border-slate-100 ${critico ? "bg-red-50" : ""}">
+        <td class="px-4 py-2">${s.insumoNombre}</td>
+        <td class="px-4 py-2">${s.categoriaNombre || ""}</td>
+        <td class="px-4 py-2 font-medium">${s.almacen}</td>
+        <td class="px-4 py-2 ${critico ? "text-red-700 font-semibold" : ""}">${s.existencia}</td>
+        <td class="px-4 py-2">
+          ${admin ? `<input type="number" min="0" value="${s.minimo ?? 0}" data-id="${s.id}" class="w-20 border border-slate-300 rounded px-2 py-1 text-sm input-minimo" />` : (s.minimo ?? 0)}
+        </td>
+        <td class="px-4 py-2">${critico ? '<span class="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-semibold">⚠ Bajo mínimo</span>' : '<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold">OK</span>'}</td>
+      </tr>`;
+      })
+      .join("") || `<tr><td colspan="6" class="px-4 py-6 text-center text-slate-400">Sin existencias registradas.</td></tr>`;
+
+  if (admin) {
+    tbody.querySelectorAll(".input-minimo").forEach((input) => {
+      input.addEventListener("change", async () => {
+        try {
+          await updateDoc(doc(db, COLLECTIONS.INSUMO_STOCK, input.dataset.id), { minimo: Number(input.value) || 0 });
+          toast("Nivel mínimo actualizado.", "success");
+        } catch (err) {
+          console.error(err);
+          toast("No se pudo actualizar el mínimo.", "error");
+        }
+      });
+    });
+  }
+}
+
+/* ------------------------------- Entradas -------------------------------- */
+
+function setupEntradaForm() {
+  const form = document.getElementById("form-entrada");
+  if (!form) return;
+  const respField = form.elements["responsable"];
+  if (respField) respField.value = getResponsableLabel();
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const insumoSelect = form.elements["insumoId"];
+    const insumoOpt = insumoSelect.options[insumoSelect.selectedIndex];
+    const almacen = form.elements["almacenDestino"].value;
+    const cantidad = Number(form.elements["cantidad"].value);
+    const responsable = form.elements["responsable"].value.trim();
+    const observaciones = form.elements["observaciones"]?.value || "";
+    const fecha = form.elements["fecha"].value;
+
+    if (!insumoOpt?.value || !almacen || !cantidad || cantidad <= 0) {
+      toast("Complete insumo, almacén destino y una cantidad válida.", "error");
+      return;
+    }
+
+    try {
+      await registrarEntrada({
+        insumoId: insumoOpt.value,
+        insumoNombre: insumoOpt.dataset.nombre,
+        almacen,
+        cantidad,
+        responsable,
+        observaciones,
+        fecha,
+      });
+      toast("Entrada registrada y existencia actualizada.", "success");
+      form.reset();
+      if (respField) respField.value = getResponsableLabel();
+    } catch (err) {
+      console.error(err);
+      toast("No se pudo registrar la entrada.", "error");
+    }
+  });
+}
+
+async function registrarEntrada({ insumoId, insumoNombre, almacen, cantidad, responsable, observaciones, fecha }) {
+  const stockId = stockDocId(insumoId, almacen);
+  const insumo = insumos.find((i) => i.id === insumoId);
+
+  await runTransaction(db, async (tx) => {
+    const stockRef = doc(db, COLLECTIONS.INSUMO_STOCK, stockId);
+    const stockSnap = await tx.get(stockRef);
+    const existenciaActual = stockSnap.exists() ? Number(stockSnap.data().existencia) || 0 : 0;
+    tx.set(
+      stockRef,
+      {
+        insumoId,
+        insumoNombre,
+        categoriaId: insumo?.categoriaId || "",
+        categoriaNombre: insumo?.categoriaNombre || "",
+        almacen,
+        existencia: existenciaActual + cantidad,
+        minimo: stockSnap.exists() ? stockSnap.data().minimo ?? 0 : 0,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  });
+
+  const user = getCurrentUser();
+  await addDoc(collection(db, COLLECTIONS.ENTRADAS_INVENTARIO), {
+    insumoId,
+    insumoNombre,
+    almacenDestino: almacen,
+    cantidad,
+    responsable,
+    observaciones,
+    fecha: fecha ? parseLocalDate(fecha) : new Date(),
+    createdAt: serverTimestamp(),
+    createdBy: user?.uid || null,
+    createdByEmail: user?.email || null,
+  });
+}
+
+async function deleteEntrada(row) {
+  if (!row) return;
+  const ok = await confirmDialog({
+    title: "Eliminar entrada",
+    message: `Se eliminará el ingreso de ${row.cantidad} unidad(es) de "${row.insumoNombre}" y se revertirá la existencia en ${row.almacenDestino}. ¿Continuar?`,
+  });
+  if (!ok) return;
+  try {
+    const stockId = stockDocId(row.insumoId, row.almacenDestino);
+    await runTransaction(db, async (tx) => {
+      const stockRef = doc(db, COLLECTIONS.INSUMO_STOCK, stockId);
+      const stockSnap = await tx.get(stockRef);
+      const existenciaActual = stockSnap.exists() ? Number(stockSnap.data().existencia) || 0 : 0;
+      tx.update(stockRef, { existencia: Math.max(0, existenciaActual - Number(row.cantidad)), updatedAt: serverTimestamp() });
+    });
+    await deleteRecord(COLLECTIONS.ENTRADAS_INVENTARIO, row.id);
+    toast("Entrada eliminada y existencia revertida.", "success");
+  } catch (err) {
+    console.error(err);
+    toast("No se pudo eliminar la entrada.", "error");
+  }
+}
+
+/* --------------------------- Transferencias ------------------------------ */
+
+function setupTransferenciaForm() {
+  const form = document.getElementById("form-transferencia");
+  if (!form) return;
+  const respField = form.elements["responsable"];
+  if (respField) respField.value = getResponsableLabel();
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const insumoSelect = form.elements["insumoId"];
+    const insumoOpt = insumoSelect.options[insumoSelect.selectedIndex];
+    const origen = form.elements["stockOrigen"].value;
+    const destino = form.elements["stockDestino"].value;
+    const cantidad = Number(form.elements["cantidad"].value);
+    const responsable = form.elements["responsable"].value.trim();
+    const fecha = form.elements["fecha"].value;
+
+    if (!insumoOpt?.value || !origen || !destino || !cantidad || cantidad <= 0) {
+      toast("Complete insumo, stock origen, stock destino y una cantidad válida.", "error");
+      return;
+    }
+    if (origen === destino) {
+      toast("El stock de origen y destino no pueden ser el mismo.", "error");
+      return;
+    }
+
+    try {
+      await registrarTransferencia({
+        insumoId: insumoOpt.value,
+        insumoNombre: insumoOpt.dataset.nombre,
+        origen,
+        destino,
+        cantidad,
+        responsable,
+        fecha,
+      });
+      toast("Transferencia registrada correctamente.", "success");
+      form.reset();
+      if (respField) respField.value = getResponsableLabel();
+    } catch (err) {
+      console.error(err);
+      toast(err.message || "No se pudo registrar la transferencia.", "error");
+    }
+  });
+}
+
+async function registrarTransferencia({ insumoId, insumoNombre, origen, destino, cantidad, responsable, fecha }) {
+  const origenId = stockDocId(insumoId, origen);
+  const destinoId = stockDocId(insumoId, destino);
+  const insumo = insumos.find((i) => i.id === insumoId);
+
+  await runTransaction(db, async (tx) => {
+    const origenRef = doc(db, COLLECTIONS.INSUMO_STOCK, origenId);
+    const destinoRef = doc(db, COLLECTIONS.INSUMO_STOCK, destinoId);
+    const [origenSnap, destinoSnap] = await Promise.all([tx.get(origenRef), tx.get(destinoRef)]);
+
+    const existenciaOrigen = origenSnap.exists() ? Number(origenSnap.data().existencia) || 0 : 0;
+    if (existenciaOrigen < cantidad) {
+      throw new Error(`Existencia insuficiente en ${origen}. Disponible: ${existenciaOrigen}.`);
+    }
+    const existenciaDestino = destinoSnap.exists() ? Number(destinoSnap.data().existencia) || 0 : 0;
+
+    tx.update(origenRef, { existencia: existenciaOrigen - cantidad, updatedAt: serverTimestamp() });
+    tx.set(
+      destinoRef,
+      {
+        insumoId,
+        insumoNombre,
+        categoriaId: insumo?.categoriaId || "",
+        categoriaNombre: insumo?.categoriaNombre || "",
+        almacen: destino,
+        existencia: existenciaDestino + cantidad,
+        minimo: destinoSnap.exists() ? destinoSnap.data().minimo ?? 0 : 0,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  });
+
+  const user = getCurrentUser();
+  await addDoc(collection(db, COLLECTIONS.TRANSFERENCIAS_INVENTARIO), {
+    insumoId,
+    insumoNombre,
+    stockOrigen: origen,
+    stockDestino: destino,
+    cantidad,
+    responsable,
+    fecha: fecha ? parseLocalDate(fecha) : new Date(),
+    createdAt: serverTimestamp(),
+    createdBy: user?.uid || null,
+    createdByEmail: user?.email || null,
+  });
+}
+
+async function deleteTransferencia(row) {
+  if (!row) return;
+  const ok = await confirmDialog({
+    title: "Eliminar transferencia",
+    message: `Se revertirá el movimiento de ${row.cantidad} unidad(es) de "${row.insumoNombre}" (${row.stockOrigen} → ${row.stockDestino}). ¿Continuar?`,
+  });
+  if (!ok) return;
+  try {
+    const origenId = stockDocId(row.insumoId, row.stockOrigen);
+    const destinoId = stockDocId(row.insumoId, row.stockDestino);
+    await runTransaction(db, async (tx) => {
+      const origenRef = doc(db, COLLECTIONS.INSUMO_STOCK, origenId);
+      const destinoRef = doc(db, COLLECTIONS.INSUMO_STOCK, destinoId);
+      const [origenSnap, destinoSnap] = await Promise.all([tx.get(origenRef), tx.get(destinoRef)]);
+      const existenciaOrigen = origenSnap.exists() ? Number(origenSnap.data().existencia) || 0 : 0;
+      const existenciaDestino = destinoSnap.exists() ? Number(destinoSnap.data().existencia) || 0 : 0;
+      tx.set(origenRef, { existencia: existenciaOrigen + Number(row.cantidad), updatedAt: serverTimestamp() }, { merge: true });
+      tx.set(destinoRef, { existencia: Math.max(0, existenciaDestino - Number(row.cantidad)), updatedAt: serverTimestamp() }, { merge: true });
+    });
+    await deleteRecord(COLLECTIONS.TRANSFERENCIAS_INVENTARIO, row.id);
+    toast("Transferencia eliminada y existencias revertidas.", "success");
+  } catch (err) {
+    console.error(err);
+    toast("No se pudo eliminar la transferencia.", "error");
+  }
+}

@@ -1,0 +1,123 @@
+/**
+ * auth.js
+ * -----------------------------------------------------------------------
+ * Gestión de autenticación y control de acceso basado en roles (RBAC).
+ * - Inicia/cierra sesión con Firebase Authentication (email/password).
+ * - Carga el perfil del usuario (rol) desde Firestore: usuarios/{uid}.
+ * - Expone helpers `isAdmin()` / `isOperador()` usados por toda la UI para
+ *   mostrar/ocultar controles de edición y eliminación.
+ * - Permite a un administrador crear nuevas cuentas (Operador/Admin) sin
+ *   perder su propia sesión, usando una instancia secundaria de Firebase.
+ * -----------------------------------------------------------------------
+ */
+import {
+  auth,
+  db,
+  doc,
+  getDoc,
+  setDoc,
+  serverTimestamp,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  createUserWithEmailAndPassword,
+  getSecondaryAuth,
+} from "./firebase.js";
+import { COLLECTIONS, ROLES } from "./config.js";
+import { signOut as fbSignOut } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js";
+import { toast } from "./ui.js";
+
+let currentUser = null; // { uid, email }
+let currentProfile = null; // { nombre, rol, activo }
+
+const listeners = [];
+
+export function onAuthReady(cb) {
+  listeners.push(cb);
+}
+
+function notify() {
+  listeners.forEach((cb) => cb({ user: currentUser, profile: currentProfile }));
+}
+
+export function getCurrentUser() {
+  return currentUser;
+}
+export function getCurrentProfile() {
+  return currentProfile;
+}
+export function isAdmin() {
+  return currentProfile?.rol === ROLES.ADMIN;
+}
+export function isOperador() {
+  return currentProfile?.rol === ROLES.OPERADOR;
+}
+export function getResponsableLabel() {
+  return currentProfile?.nombre || currentUser?.email || "Usuario";
+}
+
+export async function login(email, password) {
+  const cred = await signInWithEmailAndPassword(auth, email, password);
+  return cred.user;
+}
+
+export async function logout() {
+  await signOut(auth);
+}
+
+/** Crea un nuevo usuario (solo administradores) sin cerrar la sesión actual. */
+export async function adminCreateUser({ email, password, nombre, rol }) {
+  if (!isAdmin()) throw new Error("Solo un administrador puede crear usuarios.");
+  const secondaryAuth = getSecondaryAuth();
+  const cred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+  const uid = cred.user.uid;
+  await setDoc(doc(db, COLLECTIONS.USUARIOS, uid), {
+    email,
+    nombre,
+    rol,
+    activo: true,
+    createdAt: serverTimestamp(),
+    createdBy: currentUser?.uid || null,
+  });
+  await fbSignOut(secondaryAuth);
+  return uid;
+}
+
+/** Suscribe listeners de estado de auth y carga el perfil desde Firestore. */
+export function initAuth() {
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      currentUser = null;
+      currentProfile = null;
+      notify();
+      return;
+    }
+    currentUser = { uid: user.uid, email: user.email };
+    try {
+      const snap = await getDoc(doc(db, COLLECTIONS.USUARIOS, user.uid));
+      if (snap.exists()) {
+        currentProfile = snap.data();
+        if (currentProfile.activo === false) {
+          toast("Su cuenta se encuentra desactivada. Contacte al administrador.", "error");
+          await signOut(auth);
+          return;
+        }
+      } else {
+        // Primer inicio de sesión sin perfil: se crea como Operador por
+        // defecto. El administrador puede luego elevar su rol.
+        currentProfile = {
+          email: user.email,
+          nombre: user.email,
+          rol: ROLES.OPERADOR,
+          activo: true,
+          createdAt: serverTimestamp(),
+        };
+        await setDoc(doc(db, COLLECTIONS.USUARIOS, user.uid), currentProfile);
+      }
+    } catch (err) {
+      console.error("Error cargando perfil de usuario:", err);
+      toast("No se pudo cargar el perfil del usuario.", "error");
+    }
+    notify();
+  });
+}

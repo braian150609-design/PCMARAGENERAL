@@ -1,0 +1,16 @@
+{
+  "name": "Protección Civil — Sistema Integral de Gestión Operativa",
+  "short_name": "PC Gestión",
+  "description": "Plataforma institucional de Protección Civil para la gestión de emergencias, guardias, combustible, hidrometeorología, educación y gestión de riesgo, e inventario.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0B2545",
+  "theme_color": "#0B2545",
+  "lang": "es-VE",
+  "icons": [
+    { "src": "./icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "./icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

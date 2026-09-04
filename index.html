@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Protección Civil — Sistema Integral de Gestión Operativa</title>
+<meta name="description" content="Plataforma institucional de Protección Civil para la gestión de emergencias, guardias, combustible, hidrometeorología, educación y gestión de riesgo, e inventario." />
+<meta name="theme-color" content="#0B2545" />
+<link rel="manifest" href="./manifest.json" />
+<link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="./icons/icon.svg" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: { sans: ["Inter", "system-ui", "sans-serif"] },
+        colors: {
+          navy: {
+            50: "#eef2f7", 100: "#d4dde9", 200: "#a9bbd3", 300: "#7e99bd",
+            400: "#5377a7", 500: "#365d8d", 600: "#25476f", 700: "#13315C",
+            800: "#0B2545", 900: "#071730",
+          },
+          alert: { DEFAULT: "#C81E1E" },
+        },
+      },
+    },
+  };
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+
+<link rel="stylesheet" href="./css/styles.css" />
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans antialiased">
+
+<!-- ==================== TOASTS & MODAL ROOT ==================== -->
+<div id="toast-container" class="fixed top-4 right-4 z-[100] flex flex-col gap-2 no-print"></div>
+<div id="modal-root"></div>
+
+<!-- ==================== LOGIN SCREEN ==================== -->
+<div id="login-screen" class="min-h-screen flex items-center justify-center px-4 bg-gradient-to-br from-navy-900 via-navy-800 to-navy-700">
+  <div class="w-full max-w-md">
+    <div class="text-center mb-6">
+      <div class="mx-auto w-16 h-16 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-3xl mb-3">🛡️</div>
+      <h1 class="text-white text-xl font-bold tracking-wide">PROTECCIÓN CIVIL</h1>
+      <p class="text-navy-100 text-sm">Sistema Integral de Gestión Operativa</p>
+    </div>
+    <div class="bg-white rounded-xl shadow-2xl p-8">
+      <h2 class="text-lg font-semibold text-slate-800 mb-1">Iniciar sesión</h2>
+      <p class="text-sm text-slate-500 mb-6">Acceso exclusivo para personal autorizado.</p>
+      <form id="login-form" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Correo institucional</label>
+          <input name="email" type="email" required autocomplete="username" class="w-full border border-slate-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-navy-600" placeholder="usuario@proteccioncivil.gob" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Contraseña</label>
+          <input name="password" type="password" required autocomplete="current-password" class="w-full border border-slate-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-navy-600" placeholder="••••••••" />
+        </div>
+        <div id="login-error" class="hidden text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2"></div>
+        <button type="submit" class="w-full bg-navy-800 hover:bg-navy-900 text-white font-semibold py-2.5 rounded-md transition">Ingresar</button>
+      </form>
+    </div>
+    <p class="text-center text-navy-200 text-xs mt-6">Las cuentas son creadas por el Administrador del sistema.</p>
+  </div>
+</div>
+
+<!-- ==================== APP SHELL ==================== -->
+<div id="app-shell" class="hidden min-h-screen flex flex-col">
+
+  <!-- Topbar / cintillo institucional -->
+  <header class="bg-navy-800 text-white no-print">
+    <div class="flex items-center justify-between px-4 md:px-6 py-3">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-lg">🛡️</div>
+        <div>
+          <div class="font-bold leading-tight tracking-wide text-sm md:text-base">PROTECCIÓN CIVIL</div>
+          <div class="text-navy-200 text-[11px] md:text-xs leading-tight">Sistema Integral de Gestión Operativa</div>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <div class="text-right hidden sm:block">
+          <div id="user-name" class="text-sm font-medium leading-tight"></div>
+          <span id="user-role" class="text-xs font-semibold px-2 py-0.5 rounded-full"></span>
+        </div>
+        <button id="btn-logout" class="text-xs md:text-sm bg-white/10 hover:bg-white/20 border border-white/20 px-3 py-1.5 rounded-md">Salir</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="flex flex-1 min-h-0">
+    <!-- Sidebar -->
+    <nav class="no-print w-56 shrink-0 bg-navy-900 text-navy-100 hidden md:flex md:flex-col py-4 overflow-y-auto">
+      <button class="nav-link" data-view="dashboard">📊 Dashboard</button>
+      <button class="nav-link" data-view="emergencias">🚑 Emergencias</button>
+      <button class="nav-link" data-view="guardias">🧭 Guardias de Prevención</button>
+      <button class="nav-link" data-view="combustible">⛽ Combustible</button>
+      <button class="nav-link" data-view="hidro">🌊 Río Limón</button>
+      <button class="nav-link" data-view="educacion">🎓 Educación y Riesgo</button>
+      <button class="nav-link" data-view="inventario">📦 Inventario</button>
+      <button class="nav-link" data-view="reportes">🖨️ Reportes</button>
+      <div class="nav-admin-only hidden mt-2 pt-2 border-t border-navy-700">
+        <div class="px-4 py-1 text-[10px] uppercase tracking-wider text-navy-400">Administración</div>
+        <button class="nav-link" data-view="catalogos">🗂️ Catálogos</button>
+        <button class="nav-link" data-view="usuarios">👤 Usuarios</button>
+      </div>
+    </nav>
+
+    <!-- Mobile nav -->
+    <nav class="no-print md:hidden w-full bg-navy-900 text-navy-100 flex overflow-x-auto text-xs">
+      <button class="nav-link !py-2 !px-3 whitespace-nowrap" data-view="dashboard">📊 Dashboard</button>
+      <button class="nav-link !py-2 !px-3 whitespace-nowrap" data-view="emergencias">🚑 Emergencias</button>
+      <button class="nav-link !py-2 !px-3 whitespace-nowrap" data-view="guardias">🧭 Guardias</button>
+      <button class="nav-link !py-2 !px-3 whitespace-nowrap" data-view="combustible">⛽ Combustible</button>
+      <button class="nav-link !py-2 !px-3 whitespace-nowrap" data-view="hidro">🌊 Río Limón</button>
+      <button class="nav-link !py-2 !px-3 whitespace-nowrap" data-view="educacion">🎓 Educación</button>
+      <button class="nav-link !py-2 !px-3 whitespace-nowrap" data-view="inventario">📦 Inventario</button>
+      <button class="nav-link !py-2 !px-3 whitespace-nowrap" data-view="reportes">🖨️ Reportes</button>
+      <button class="nav-link nav-admin-only hidden !py-2 !px-3 whitespace-nowrap" data-view="catalogos">🗂️ Catálogos</button>
+      <button class="nav-link nav-admin-only hidden !py-2 !px-3 whitespace-nowrap" data-view="usuarios">👤 Usuarios</button>
+    </nav>
+
+    <!-- Main content -->
+    <main class="flex-1 min-w-0 overflow-y-auto p-4 md:p-6 space-y-6">
+
+      <!-- ============ DASHBOARD ============ -->
+      <section id="view-dashboard" class="view space-y-6">
+        <h2 class="text-xl font-bold text-slate-800">Dashboard Analítico</h2>
+        <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+          <div class="metric-card"><div class="metric-label">Pacientes hoy</div><div id="dash-pacientes-hoy" class="metric-value">0</div><div class="metric-sub">Mes: <span id="dash-pacientes-mes">0</span> · Año: <span id="dash-pacientes-anio">0</span></div></div>
+          <div class="metric-card"><div class="metric-label">Traslados hoy</div><div id="dash-traslados-hoy" class="metric-value">0</div><div class="metric-sub">Mes: <span id="dash-traslados-mes">0</span> · Año: <span id="dash-traslados-anio">0</span></div></div>
+          <div class="metric-card"><div class="metric-label">Fallecidos hoy</div><div id="dash-fallecidos-hoy" class="metric-value text-red-700">0</div><div class="metric-sub">Mes: <span id="dash-fallecidos-mes">0</span> · Año: <span id="dash-fallecidos-anio">0</span></div></div>
+          <div class="metric-card"><div class="metric-label">Guardias hoy</div><div id="dash-guardias-hoy" class="metric-value">0</div><div class="metric-sub">Mes: <span id="dash-guardias-mes">0</span> · Año: <span id="dash-guardias-anio">0</span></div></div>
+          <div class="metric-card"><div class="metric-label">Litros despachados hoy</div><div id="dash-combustible-hoy" class="metric-value">0</div><div class="metric-sub">Mes: <span id="dash-combustible-mes">0</span> L · Año: <span id="dash-combustible-anio">0</span> L</div></div>
+          <div class="metric-card"><div class="metric-label">Insumos bajo mínimo</div><div id="dash-inventario-criticos" class="metric-value text-red-700">0</div><div class="metric-sub">Requieren reposición</div></div>
+        </div>
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <div class="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
+            <h3 class="font-semibold text-slate-700 mb-3">Tendencia mensual (últimos 6 meses)</h3>
+            <canvas id="chart-tendencia" height="220"></canvas>
+          </div>
+          <div class="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
+            <h3 class="font-semibold text-slate-700 mb-3">Distribución de registros por módulo</h3>
+            <canvas id="chart-distribucion" height="220"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ EMERGENCIAS ============ -->
+      <section id="view-emergencias" class="view hidden space-y-4">
+        <h2 class="text-xl font-bold text-slate-800">Operaciones de Emergencia</h2>
+        <div class="flex gap-2 no-print">
+          <button class="subtab-btn subtab-active" data-subtab="pacientes">Pacientes</button>
+          <button class="subtab-btn" data-subtab="traslados">Traslados</button>
+          <button class="subtab-btn" data-subtab="fallecidos">Fallecidos</button>
+        </div>
+
+        <div id="panel-pacientes" class="subtab-panel space-y-4">
+          <form id="form-pacientes" class="form-card">
+            <div class="form-grid">
+              <div><label class="form-label">Fecha / Hora</label><input required type="datetime-local" name="fecha" class="form-input" /></div>
+              <div><label class="form-label">Categoría de edad</label>
+                <select required name="categoriaEdad" class="form-input"><option value="">Seleccione...</option><option>Niño</option><option>Adolescente</option><option>Adulto</option></select>
+              </div>
+              <div><label class="form-label">Género</label>
+                <select required name="genero" class="form-input"><option value="">Seleccione...</option><option>Masculino</option><option>Femenino</option></select>
+              </div>
+              <div><label class="form-label">Motivo de atención / Diagnóstico preliminar</label><input required type="text" name="motivo" class="form-input" /></div>
+              <div><label class="form-label">Ubicación del evento</label><input required type="text" name="ubicacion" class="form-input" /></div>
+              <div><label class="form-label">Responsable</label><input required type="text" name="responsable" class="form-input" /></div>
+            </div>
+            <div class="form-actions">
+              <button type="button" data-role="cancel-edit" class="btn-secondary">Cancelar edición</button>
+              <button type="submit" class="btn-primary">Guardar paciente</button>
+            </div>
+          </form>
+          <div id="historial-pacientes"></div>
+        </div>
+
+        <div id="panel-traslados" class="subtab-panel hidden space-y-4">
+          <form id="form-traslados" class="form-card">
+            <div class="form-grid">
+              <div><label class="form-label">Fecha / Hora</label><input required type="datetime-local" name="fecha" class="form-input" /></div>
+              <div><label class="form-label">Tipo</label>
+                <select required id="traslado-tipo" name="tipo" class="form-input"><option value="">Seleccione...</option><option>Apoyo</option><option>Interhospitalario</option></select>
+              </div>
+              <div id="traslado-centro-wrap" class="hidden"><label class="form-label">Centro de salud de destino</label><input type="text" name="centroDestino" class="form-input" /></div>
+              <div><label class="form-label">Unidad vehicular asignada</label><input required type="text" name="unidad" class="form-input" /></div>
+              <div><label class="form-label">Personal a bordo</label><input required type="text" name="personalABordo" class="form-input" /></div>
+              <div><label class="form-label">Responsable</label><input required type="text" name="responsable" class="form-input" /></div>
+              <div class="md:col-span-3"><label class="form-label">Observaciones</label><textarea name="observaciones" class="form-input" rows="2"></textarea></div>
+            </div>
+            <div class="form-actions">
+              <button type="button" data-role="cancel-edit" class="btn-secondary">Cancelar edición</button>
+              <button type="submit" class="btn-primary">Guardar traslado</button>
+            </div>
+          </form>
+          <div id="historial-traslados"></div>
+        </div>
+
+        <div id="panel-fallecidos" class="subtab-panel hidden space-y-4">
+          <form id="form-fallecidos" class="form-card">
+            <div class="form-grid">
+              <div><label class="form-label">Fecha / Hora</label><input required type="datetime-local" name="fecha" class="form-input" /></div>
+              <div><label class="form-label">Datos básicos de control / Registro</label><input required type="text" name="datosControl" class="form-input" /></div>
+              <div><label class="form-label">Causa presunta</label><input required type="text" name="causaPresunta" class="form-input" /></div>
+              <div><label class="form-label">Ubicación del levantamiento/atención</label><input required type="text" name="ubicacion" class="form-input" /></div>
+              <div><label class="form-label">Responsable</label><input required type="text" name="responsable" class="form-input" /></div>
+              <div class="md:col-span-3"><label class="form-label">Observaciones</label><textarea name="observaciones" class="form-input" rows="2"></textarea></div>
+            </div>
+            <div class="form-actions">
+              <button type="button" data-role="cancel-edit" class="btn-secondary">Cancelar edición</button>
+              <button type="submit" class="btn-primary">Guardar registro</button>
+            </div>
+          </form>
+          <div id="historial-fallecidos"></div>
+        </div>
+      </section>
+
+      <!-- ============ GUARDIAS ============ -->
+      <section id="view-guardias" class="view hidden space-y-4">
+        <h2 class="text-xl font-bold text-slate-800">Guardias de Prevención</h2>
+        <form id="form-guardias" class="form-card">
+          <div class="form-grid">
+            <div><label class="form-label">Fecha</label><input required type="date" name="fecha" class="form-input" /></div>
+            <div><label class="form-label">Parroquia</label><input required type="text" name="parroquia" class="form-input" /></div>
+            <div><label class="form-label">Lugar o sector específico</label><input required type="text" name="lugar" class="form-input" /></div>
+            <div><label class="form-label">Cantidad de personas abarcadas</label><input required type="number" min="0" name="cantidadPersonas" class="form-input" /></div>
+            <div><label class="form-label">Responsable de la guardia</label><input required type="text" name="responsable" class="form-input" /></div>
+            <div class="md:col-span-3"><label class="form-label">Descripción detallada de la actividad</label><textarea required name="descripcion" class="form-input" rows="2"></textarea></div>
+            <div class="md:col-span-3"><label class="form-label">Observaciones</label><textarea name="observaciones" class="form-input" rows="2"></textarea></div>
+          </div>
+          <div class="form-actions">
+            <button type="button" data-role="cancel-edit" class="btn-secondary">Cancelar edición</button>
+            <button type="submit" class="btn-primary">Guardar guardia</button>
+          </div>
+        </form>
+        <div id="historial-guardias"></div>
+      </section>
+
+      <!-- ============ COMBUSTIBLE ============ -->
+      <section id="view-combustible" class="view hidden space-y-4">
+        <h2 class="text-xl font-bold text-slate-800">Despacho de Combustible</h2>
+        <p class="text-sm text-slate-500">Las instituciones se seleccionan del catálogo maestro. <span class="role-admin-only hidden">Gestione el catálogo desde <b>Catálogos → Instituciones</b>.</span></p>
+        <form id="form-combustible" class="form-card">
+          <div class="form-grid">
+            <div><label class="form-label">Fecha</label><input required type="date" name="fecha" class="form-input" /></div>
+            <div><label class="form-label">Institución</label><select required name="institucionId" class="form-input select-institucion"></select></div>
+            <div><label class="form-label">Cantidad de litros despachados</label><input required type="number" min="0" step="0.01" name="litros" class="form-input" /></div>
+            <div><label class="form-label">Unidad vehicular / Placa</label><input required type="text" name="unidadVehicular" class="form-input" /></div>
+            <div><label class="form-label">Responsable</label><input required type="text" name="responsable" class="form-input" /></div>
+            <div class="md:col-span-3"><label class="form-label">Observaciones</label><textarea name="observaciones" class="form-input" rows="2"></textarea></div>
+          </div>
+          <div class="form-actions">
+            <button type="button" data-role="cancel-edit" class="btn-secondary">Cancelar edición</button>
+            <button type="submit" class="btn-primary">Guardar despacho</button>
+          </div>
+        </form>
+        <div id="historial-combustible"></div>
+      </section>
+
+      <!-- ============ HIDROMETEOROLOGÍA ============ -->
+      <section id="view-hidro" class="view hidden space-y-4">
+        <h2 class="text-xl font-bold text-slate-800">Hidrometeorología — Río Limón</h2>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div class="bg-white rounded-lg border border-slate-200 shadow-sm p-6 text-center lg:col-span-1">
+            <div class="text-sm text-slate-500 mb-1">Nivel actual</div>
+            <div id="hidro-nivel-actual" class="text-5xl font-extrabold text-navy-800">— m</div>
+            <div id="hidro-fecha-lectura" class="text-xs text-slate-400 mt-1 mb-4">Sin lecturas registradas</div>
+            <div id="hidro-estado-badge" class="inline-block px-4 py-1.5 rounded-full border text-sm font-bold">SIN DATOS</div>
+            <button id="btn-hidro-consultar" class="btn-secondary w-full mt-5 no-print">🔄 Consultar fuente externa</button>
+            <div class="text-left text-xs text-slate-500 mt-5 space-y-1 border-t border-slate-100 pt-3">
+              <div class="flex justify-between"><span class="font-semibold text-emerald-700">Normal</span><span id="hidro-umbral-normal-label"></span></div>
+              <div class="flex justify-between"><span class="font-semibold text-amber-700">Advertencia</span><span id="hidro-umbral-advertencia-label"></span></div>
+              <div class="flex justify-between"><span class="font-semibold text-red-700">Alerta roja</span><span id="hidro-umbral-alerta-label"></span></div>
+            </div>
+          </div>
+          <div class="bg-white rounded-lg border border-slate-200 shadow-sm p-4 lg:col-span-2">
+            <h3 class="font-semibold text-slate-700 mb-3">Tendencia de nivel (últimas lecturas)</h3>
+            <canvas id="chart-hidro" height="200"></canvas>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <form id="form-hidro-lectura" class="form-card">
+            <h3 class="font-semibold text-slate-700 mb-2">Registrar lectura manual</h3>
+            <div class="form-grid !grid-cols-1">
+              <div><label class="form-label">Nivel actual (metros)</label><input required type="number" step="0.01" min="0" name="nivel" class="form-input" /></div>
+            </div>
+            <div class="form-actions"><button type="submit" class="btn-primary">Registrar lectura</button></div>
+          </form>
+
+          <form id="form-hidro-config" class="form-card hidden">
+            <h3 class="font-semibold text-slate-700 mb-2">Configuración de umbrales y fuente externa <span class="text-xs text-slate-400">(Administrador)</span></h3>
+            <div class="form-grid !grid-cols-1">
+              <div><label class="form-label">Umbral de advertencia (m)</label><input required type="number" step="0.01" name="advertencia" class="form-input" /></div>
+              <div><label class="form-label">Umbral de alerta roja (m)</label><input required type="number" step="0.01" name="alerta" class="form-input" /></div>
+              <div><label class="form-label">Endpoint / API externa (opcional)</label><input type="url" name="apiEndpoint" placeholder="https://..." class="form-input" /></div>
+              <div><label class="form-label">API Key (opcional)</label><input type="text" name="apiKey" class="form-input" /></div>
+            </div>
+            <div class="form-actions"><button type="submit" class="btn-primary">Guardar configuración</button></div>
+          </form>
+          <p id="hidro-config-readonly-note" class="text-xs text-slate-400 lg:col-start-2">Solo el administrador puede modificar los umbrales y la fuente externa de datos.</p>
+        </div>
+
+        <div id="historial-hidro"></div>
+      </section>
+
+      <!-- ============ EDUCACIÓN Y GESTIÓN DE RIESGO ============ -->
+      <section id="view-educacion" class="view hidden space-y-4">
+        <h2 class="text-xl font-bold text-slate-800">Educación y Gestión de Riesgo</h2>
+        <form id="form-educacion" class="form-card">
+          <div class="form-grid">
+            <div><label class="form-label">Tipo</label><select required name="tipoInstitucion" class="form-input"><option value="">Seleccione...</option><option>Institución</option><option>Comunidad</option></select></div>
+            <div><label class="form-label">Fecha</label><input required type="date" name="fecha" class="form-input" /></div>
+            <div><label class="form-label">Nombre de la institución/comunidad</label><input required type="text" name="nombre" class="form-input" /></div>
+            <div><label class="form-label">Población beneficiada</label><input required type="number" min="0" name="poblacionBeneficiada" class="form-input" /></div>
+            <div><label class="form-label">Tema o formación impartida</label><input required type="text" name="tema" class="form-input" /></div>
+            <div><label class="form-label">¿Incluyó simulacro?</label><select required name="simulacro" class="form-input"><option value="">Seleccione...</option><option>Sí</option><option>No</option></select></div>
+            <div><label class="form-label">Responsable</label><input required type="text" name="responsable" class="form-input" /></div>
+            <div class="md:col-span-3"><label class="form-label">Observaciones</label><textarea name="observaciones" class="form-input" rows="2"></textarea></div>
+          </div>
+          <div class="form-actions">
+            <button type="button" data-role="cancel-edit" class="btn-secondary">Cancelar edición</button>
+            <button type="submit" class="btn-primary">Guardar registro</button>
+          </div>
+        </form>
+        <div id="historial-educacion"></div>
+      </section>
+
+      <!-- ============ INVENTARIO ============ -->
+      <section id="view-inventario" class="view hidden space-y-4">
+        <h2 class="text-xl font-bold text-slate-800">Inventario e Insumos</h2>
+        <div class="flex flex-wrap gap-2 no-print">
+          <button class="subtab-btn subtab-active" data-subtab="existencias">Existencias</button>
+          <button class="subtab-btn" data-subtab="catalogo">Catálogo de Insumos</button>
+          <button class="subtab-btn" data-subtab="entradas">Entradas</button>
+          <button class="subtab-btn" data-subtab="transferencias">Transferencias</button>
+        </div>
+
+        <div id="panel-existencias" class="subtab-panel space-y-3">
+          <div class="flex items-center justify-between no-print">
+            <label class="form-label !mb-0">Filtrar por almacén:</label>
+            <select id="stock-filtro-almacen" class="form-input !w-56"></select>
+          </div>
+          <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto">
+            <table class="min-w-full text-sm">
+              <thead class="bg-slate-50 text-slate-600">
+                <tr>
+                  <th class="text-left font-medium px-4 py-2">Insumo</th>
+                  <th class="text-left font-medium px-4 py-2">Categoría</th>
+                  <th class="text-left font-medium px-4 py-2">Almacén</th>
+                  <th class="text-left font-medium px-4 py-2">Existencia</th>
+                  <th class="text-left font-medium px-4 py-2">Mínimo crítico</th>
+                  <th class="text-left font-medium px-4 py-2">Estado</th>
+                </tr>
+              </thead>
+              <tbody id="tabla-stock-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="panel-catalogo" class="subtab-panel hidden space-y-4">
+          <form id="form-insumo" class="form-card role-admin-only hidden">
+            <h3 class="font-semibold text-slate-700 mb-2">Nuevo insumo</h3>
+            <div class="form-grid">
+              <div><label class="form-label">Nombre del insumo</label><input required type="text" name="nombre" class="form-input" /></div>
+              <div><label class="form-label">Categoría</label><select required id="insumo-categoria" name="categoriaId" class="form-input select-categoria-insumo"></select></div>
+            </div>
+            <div class="form-actions"><button type="submit" class="btn-primary">Agregar insumo</button></div>
+          </form>
+          <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto">
+            <table class="min-w-full text-sm">
+              <thead class="bg-slate-50 text-slate-600"><tr><th class="text-left font-medium px-4 py-2">Insumo</th><th class="text-left font-medium px-4 py-2">Categoría</th><th class="text-left font-medium px-4 py-2">Estado</th><th class="text-left font-medium px-4 py-2 no-print">Acciones</th></tr></thead>
+              <tbody id="tabla-insumos-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="panel-entradas" class="subtab-panel hidden space-y-4">
+          <form id="form-entrada" class="form-card">
+            <h3 class="font-semibold text-slate-700 mb-2">Registrar entrada (donación / compra)</h3>
+            <div class="form-grid">
+              <div><label class="form-label">Fecha</label><input required type="date" name="fecha" class="form-input" /></div>
+              <div><label class="form-label">Insumo</label><select required name="insumoId" class="form-input select-insumo"></select></div>
+              <div><label class="form-label">Cantidad recibida</label><input required type="number" min="1" name="cantidad" class="form-input" /></div>
+              <div><label class="form-label">Ubicación de destino</label><select required name="almacenDestino" class="form-input select-almacen"></select></div>
+              <div><label class="form-label">Responsable</label><input required type="text" name="responsable" class="form-input" /></div>
+              <div class="md:col-span-3"><label class="form-label">Observaciones</label><textarea name="observaciones" class="form-input" rows="2"></textarea></div>
+            </div>
+            <div class="form-actions"><button type="submit" class="btn-primary">Registrar entrada</button></div>
+          </form>
+          <div id="historial-entradas"></div>
+        </div>
+
+        <div id="panel-transferencias" class="subtab-panel hidden space-y-4">
+          <form id="form-transferencia" class="form-card">
+            <h3 class="font-semibold text-slate-700 mb-2">Registrar transferencia entre stocks</h3>
+            <div class="form-grid">
+              <div><label class="form-label">Fecha</label><input required type="date" name="fecha" class="form-input" /></div>
+              <div><label class="form-label">Insumo</label><select required name="insumoId" class="form-input select-insumo"></select></div>
+              <div><label class="form-label">Stock origen</label><select required name="stockOrigen" class="form-input select-almacen"></select></div>
+              <div><label class="form-label">Stock destino</label><select required name="stockDestino" class="form-input select-almacen"></select></div>
+              <div><label class="form-label">Cantidad transferida</label><input required type="number" min="1" name="cantidad" class="form-input" /></div>
+              <div><label class="form-label">Responsable</label><input required type="text" name="responsable" class="form-input" /></div>
+            </div>
+            <div class="form-actions"><button type="submit" class="btn-primary">Registrar transferencia</button></div>
+          </form>
+          <div id="historial-transferencias"></div>
+        </div>
+      </section>
+
+      <!-- ============ REPORTES ============ -->
+      <section id="view-reportes" class="view hidden space-y-6">
+        <h2 class="text-xl font-bold text-slate-800">Centro de Reportes</h2>
+
+        <div class="bg-white rounded-lg border border-slate-200 shadow-sm p-4 space-y-3 no-print">
+          <label class="form-label">Seleccione un módulo</label>
+          <select id="reportes-select-modulo" class="form-input !w-72"></select>
+        </div>
+        <div id="reportes-tabla-container"></div>
+
+        <div class="border-t border-slate-200 pt-6 space-y-3">
+          <div class="flex flex-wrap items-end justify-between gap-3 no-print">
+            <h3 class="text-lg font-bold text-slate-800">Resumen General de Operaciones</h3>
+            <div class="flex flex-wrap items-end gap-2">
+              <div><label class="block text-xs text-slate-500">Desde</label><input type="date" id="resumen-desde" class="border border-slate-300 rounded-md px-2 py-1 text-sm" /></div>
+              <div><label class="block text-xs text-slate-500">Hasta</label><input type="date" id="resumen-hasta" class="border border-slate-300 rounded-md px-2 py-1 text-sm" /></div>
+              <button id="btn-resumen-print" class="px-3 py-1.5 text-xs rounded-md bg-navy-800 text-white hover:bg-navy-900">🖨️ Imprimir</button>
+              <button id="btn-resumen-xlsx" class="px-3 py-1.5 text-xs rounded-md bg-emerald-700 text-white hover:bg-emerald-800">⬇ Excel</button>
+              <button id="btn-resumen-pdf" class="px-3 py-1.5 text-xs rounded-md bg-red-700 text-white hover:bg-red-800">⬇ PDF</button>
+            </div>
+          </div>
+          <div id="reportes-resumen-general"></div>
+        </div>
+      </section>
+
+      <!-- ============ CATÁLOGOS (ADMIN) ============ -->
+      <section id="view-catalogos" class="view hidden space-y-4">
+        <h2 class="text-xl font-bold text-slate-800">Catálogos Maestros</h2>
+        <div class="flex gap-2 no-print">
+          <button class="subtab-btn subtab-active" data-subtab="instituciones">Instituciones</button>
+          <button class="subtab-btn" data-subtab="categorias-insumos">Categorías de Insumos</button>
+        </div>
+
+        <div id="panel-instituciones" class="subtab-panel space-y-4">
+          <form id="form-institucion" class="form-card">
+            <h3 class="font-semibold text-slate-700 mb-2">Nueva institución aliada</h3>
+            <div class="form-grid">
+              <div><label class="form-label">Nombre</label><input required type="text" name="nombre" class="form-input" /></div>
+              <div><label class="form-label">Categoría</label><select required name="categoria" class="form-input"></select></div>
+            </div>
+            <div class="form-actions"><button type="submit" class="btn-primary">Agregar institución</button></div>
+          </form>
+          <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto">
+            <table class="min-w-full text-sm">
+              <thead class="bg-slate-50 text-slate-600"><tr><th class="text-left font-medium px-4 py-2">Nombre</th><th class="text-left font-medium px-4 py-2">Categoría</th><th class="text-left font-medium px-4 py-2">Estado</th><th class="text-left font-medium px-4 py-2">Acciones</th></tr></thead>
+              <tbody id="tabla-instituciones-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="panel-categorias-insumos" class="subtab-panel hidden space-y-4">
+          <form id="form-categoria-insumo" class="form-card">
+            <h3 class="font-semibold text-slate-700 mb-2">Nueva categoría de insumo</h3>
+            <div class="form-grid !grid-cols-1 md:!grid-cols-2">
+              <div><label class="form-label">Nombre de la categoría</label><input required type="text" name="nombre" class="form-input" /></div>
+            </div>
+            <div class="form-actions"><button type="submit" class="btn-primary">Agregar categoría</button></div>
+          </form>
+          <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto">
+            <table class="min-w-full text-sm">
+              <thead class="bg-slate-50 text-slate-600"><tr><th class="text-left font-medium px-4 py-2">Nombre</th><th class="text-left font-medium px-4 py-2">Estado</th><th class="text-left font-medium px-4 py-2">Acciones</th></tr></thead>
+              <tbody id="tabla-categorias-insumos-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ USUARIOS (ADMIN) ============ -->
+      <section id="view-usuarios" class="view hidden space-y-4">
+        <h2 class="text-xl font-bold text-slate-800">Gestión de Usuarios</h2>
+        <form id="form-nuevo-usuario" class="form-card">
+          <h3 class="font-semibold text-slate-700 mb-2">Crear nuevo usuario</h3>
+          <div class="form-grid">
+            <div><label class="form-label">Nombre completo</label><input required type="text" name="nombre" class="form-input" /></div>
+            <div><label class="form-label">Correo</label><input required type="email" name="email" class="form-input" /></div>
+            <div><label class="form-label">Contraseña temporal</label><input required type="password" minlength="6" name="password" class="form-input" /></div>
+            <div><label class="form-label">Rol</label><select required name="rol" class="form-input"><option value="operador">Operador</option><option value="admin">Administrador</option></select></div>
+          </div>
+          <div class="form-actions"><button type="submit" class="btn-primary">Crear usuario</button></div>
+        </form>
+        <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto">
+          <table class="min-w-full text-sm">
+            <thead class="bg-slate-50 text-slate-600"><tr><th class="text-left font-medium px-4 py-2">Nombre</th><th class="text-left font-medium px-4 py-2">Correo</th><th class="text-left font-medium px-4 py-2">Rol</th><th class="text-left font-medium px-4 py-2">Estado</th><th class="text-left font-medium px-4 py-2">Acciones</th></tr></thead>
+            <tbody id="tabla-usuarios-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<script type="module" src="./js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,159 @@
+rules_version = '2';
+
+/**
+ * firestore.rules
+ * -----------------------------------------------------------------------
+ * Reglas de seguridad para el Sistema Integral de Gestión Operativa de
+ * Protección Civil.
+ *
+ * Principios de RBAC aplicados (reflejan exactamente lo implementado en la
+ * interfaz — js/data.js, js/auth.js):
+ *   - OPERADOR: puede crear y leer registros operativos. NO puede editar
+ *     ni eliminar registros históricos ya guardados.
+ *   - ADMINISTRADOR: control total (crear, leer, editar, eliminar) sobre
+ *     todos los registros y catálogos del sistema.
+ *   - Los catálogos maestros (instituciones, categorías de insumos,
+ *     insumos) solo pueden ser creados/editados/eliminados por el
+ *     administrador; cualquier usuario autenticado puede leerlos para
+ *     poblar los <select> de los formularios operativos.
+ *   - Toda creación debe declarar `createdBy` igual al uid autenticado,
+ *     reforzando la trazabilidad obligatoria de la aplicación.
+ * -----------------------------------------------------------------------
+ */
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /* -------------------------- Helpers de rol ------------------------- */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid));
+    }
+
+    function isKnownUser() {
+      return isSignedIn() && userDoc().data != null && userDoc().data.activo != false;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && userDoc().data.rol == 'admin' && userDoc().data.activo != false;
+    }
+
+    function isOwnCreation() {
+      return request.resource.data.createdBy == request.auth.uid;
+    }
+
+    // Reglas comunes a todos los módulos operativos de tipo
+    // "formulario + historial" (Pacientes, Traslados, Fallecidos,
+    // Guardias, Combustible, Educación): cualquier usuario autenticado y
+    // activo puede leer y crear declarando su propia autoría; solo el
+    // administrador puede editar o eliminar.
+    function canReadOperational() {
+      return isSignedIn();
+    }
+    function canCreateOperational() {
+      return isKnownUser() && isOwnCreation();
+    }
+    function canWriteOperational() {
+      return isAdmin();
+    }
+
+    /* ------------------------------ usuarios ---------------------------- */
+    match /usuarios/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      // Auto-aprovisionamiento en el primer inicio de sesión (crea su
+      // propio documento) o creación por parte de un administrador desde
+      // el panel de Usuarios.
+      allow create: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    /* --------------- Registros operativos (crear/leer todos, ------------ */
+    /* --------------- editar/eliminar solo administrador) ---------------- */
+    match /pacientes/{docId} {
+      allow read: if canReadOperational();
+      allow create: if canCreateOperational();
+      allow update, delete: if canWriteOperational();
+    }
+    match /traslados/{docId} {
+      allow read: if canReadOperational();
+      allow create: if canCreateOperational();
+      allow update, delete: if canWriteOperational();
+    }
+    match /fallecidos/{docId} {
+      allow read: if canReadOperational();
+      allow create: if canCreateOperational();
+      allow update, delete: if canWriteOperational();
+    }
+    match /guardias/{docId} {
+      allow read: if canReadOperational();
+      allow create: if canCreateOperational();
+      allow update, delete: if canWriteOperational();
+    }
+    match /despachosCombustible/{docId} {
+      allow read: if canReadOperational();
+      allow create: if canCreateOperational();
+      allow update, delete: if canWriteOperational();
+    }
+    match /educacionRiesgo/{docId} {
+      allow read: if canReadOperational();
+      allow create: if canCreateOperational();
+      allow update, delete: if canWriteOperational();
+    }
+    match /hidroLecturas/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isKnownUser() && isOwnCreation();
+      // Serie instrumental: inmutable incluso para administrador desde la
+      // UI (no se ofrece edición/eliminación); se deja bloqueada por
+      // seguridad de datos.
+      allow update, delete: if false;
+    }
+
+    /* ------------------------- Catálogos maestros ------------------------ */
+    match /instituciones/{docId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+    match /categoriasInsumos/{docId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+    match /insumos/{docId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    /* --------------------- Inventario: existencias ------------------------ */
+    // Las existencias por almacén se actualizan mediante transacciones al
+    // registrar entradas/transferencias; cualquier usuario activo puede
+    // generar esos movimientos, pero solo el administrador puede alterar
+    // manualmente el nivel mínimo crítico o eliminar el documento.
+    match /insumoStock/{docId} {
+      allow read: if isSignedIn();
+      allow create, update: if isKnownUser();
+      allow delete: if isAdmin();
+    }
+
+    match /entradasInventario/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isKnownUser() && isOwnCreation();
+      allow update: if false; // movimientos inmutables; solo se permite eliminar (con reversión) por admin
+      allow delete: if isAdmin();
+    }
+
+    match /transferenciasInventario/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isKnownUser() && isOwnCreation();
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    /* ------------------------------ Config -------------------------------- */
+    match /config/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+  }
+}
