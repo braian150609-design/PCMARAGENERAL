@@ -186,9 +186,23 @@
             </div>
           </form>
 
+          <form id="form-insumo-usado" class="form-card">
+            <h3 class="font-semibold text-slate-700 mb-1">Insumos utilizados el día de hoy</h3>
+            <p class="text-xs text-slate-500 mb-3">Se descuentan automáticamente del inventario (queda registrado como débito) y se incluyen en el impreso de la Lista Diaria.</p>
+            <div class="form-grid">
+              <div><label class="form-label">Fecha</label><input required type="date" name="fecha" class="form-input" /></div>
+              <div><label class="form-label">Insumo</label><select required name="insumoId" class="form-input select-insumo"></select></div>
+              <div><label class="form-label">Almacén</label><select required name="almacenOrigen" class="form-input select-almacen"></select></div>
+              <div><label class="form-label">Cantidad</label><input required type="number" min="1" name="cantidad" class="form-input" /></div>
+              <div><label class="form-label">Responsable</label><input required type="text" name="responsable" class="form-input" /></div>
+            </div>
+            <div class="form-actions"><button type="submit" class="btn-primary">Agregar insumo utilizado</button></div>
+          </form>
+          <div id="tabla-insumos-usados" class="no-print"></div>
+
           <div class="form-card no-print">
             <h3 class="font-semibold text-slate-700 mb-1">🖨️ Imprimir Lista Diaria</h3>
-            <p class="text-xs text-slate-500 mb-3">Genera el documento formal del día seleccionado con el conteo de niños, adolescentes, adultos, traslados y fallecidos — listo para la firma del Jefe de Departamento y el Director.</p>
+            <p class="text-xs text-slate-500 mb-3">Genera el documento formal del día seleccionado con el conteo de niños, adolescentes, adultos, traslados, fallecidos e insumos utilizados — listo para la firma del Jefe de Departamento y el Director.</p>
             <div class="flex flex-wrap items-end gap-3">
               <div><label class="form-label">Fecha de la lista</label><input type="date" id="lista-diaria-fecha" class="form-input !w-48" /></div>
               <button id="btn-imprimir-lista-diaria" type="button" class="btn-primary">🖨️ Generar e Imprimir</button>

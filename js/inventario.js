@@ -571,7 +571,10 @@ function setupDebitoForm() {
   });
 }
 
-async function registrarDebito({ insumoId, insumoNombre, almacen, cantidad, motivo, responsable, observaciones, fecha }) {
+// Exportado para que otros módulos (p. ej. la Lista Diaria de Pacientes en
+// emergencias.js, "Insumos utilizados el día de hoy") puedan generar un
+// débito de inventario sin duplicar la lógica de transacción atómica.
+export async function registrarDebito({ insumoId, insumoNombre, almacen, cantidad, motivo, responsable, observaciones, fecha }) {
   const stockId = stockDocId(insumoId, almacen);
 
   await runTransaction(db, async (tx) => {
@@ -600,7 +603,7 @@ async function registrarDebito({ insumoId, insumoNombre, almacen, cantidad, moti
   });
 }
 
-async function deleteDebito(row) {
+export async function deleteDebito(row) {
   if (!row) return;
   const ok = await confirmDialog({
     title: "Eliminar débito",

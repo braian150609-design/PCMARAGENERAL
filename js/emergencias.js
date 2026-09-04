@@ -10,11 +10,17 @@
  *     Departamento y el Director).
  *   - Traslados (con cédula, edad y nombre del paciente trasladado).
  *   - Fallecidos.
+ * La Lista Diaria también permite registrar los Insumos utilizados el día
+ * (se descuentan del inventario como un débito — ver inventario.js — y se
+ * incluyen en el documento impreso de la lista).
  * -----------------------------------------------------------------------
  */
 import { COLLECTIONS } from "./config.js";
 import { createCrudModule } from "./moduleFactory.js";
 import { formatDate, toDate, escapeHTML, printAdHoc, toast } from "./ui.js";
+import { subscribeCollection } from "./data.js";
+import { registrarDebito, deleteDebito } from "./inventario.js";
+import { isAdmin, getResponsableLabel } from "./auth.js";
 
 let modules = null;
 
@@ -89,6 +95,7 @@ export function initEmergencias() {
 
   modules = { pacientes, traslados, fallecidos };
   setupListaDiaria(modules);
+  setupInsumosUsados();
   return modules;
 }
 
@@ -118,6 +125,7 @@ function setupListaDiaria({ pacientes, traslados, fallecidos }) {
     const pacientesDia = pacientes.getRows().filter(sameDay);
     const trasladosDia = traslados.getRows().filter(sameDay);
     const fallecidosDia = fallecidos.getRows().filter(sameDay);
+    const insumosDia = insumosUsados.filter((r) => r.motivo === MOTIVO_USO_DIARIO && sameDay(r));
 
     const counts = {
       ninos: pacientesDia.filter((p) => p.categoriaEdad === "Niño").length,
@@ -135,7 +143,7 @@ function setupListaDiaria({ pacientes, traslados, fallecidos }) {
 
     printAdHoc(
       `Lista Diaria de Pacientes — ${fechaFmt}`,
-      buildListaDiariaBodyHTML(fechaFmt, pacientesDia, counts),
+      buildListaDiariaBodyHTML(fechaFmt, pacientesDia, counts, insumosDia),
       ["Jefe de Departamento", "Director"]
     );
   });
@@ -144,7 +152,7 @@ function setupListaDiaria({ pacientes, traslados, fallecidos }) {
 const cellStyle = "border:1px solid #cbd5e1;padding:5px 7px;";
 const headStyle = `${cellStyle}background:#f1f5f9;font-weight:bold;`;
 
-function buildListaDiariaBodyHTML(fechaFmt, pacientesDia, counts) {
+function buildListaDiariaBodyHTML(fechaFmt, pacientesDia, counts, insumosDia = []) {
   const rows =
     pacientesDia
       .map(
@@ -158,6 +166,21 @@ function buildListaDiariaBodyHTML(fechaFmt, pacientesDia, counts) {
       )
       .join("") ||
     `<tr><td colspan="4" style="${cellStyle}text-align:center;color:#94a3b8;">Sin pacientes registrados en esta fecha.</td></tr>`;
+
+  const insumosRows =
+    insumosDia
+      .map(
+        (r, i) => `
+      <tr>
+        <td style="${cellStyle}">${i + 1}</td>
+        <td style="${cellStyle}">${escapeHTML(r.insumoNombre)}</td>
+        <td style="${cellStyle}">${escapeHTML(r.almacenOrigen)}</td>
+        <td style="${cellStyle}">${r.cantidad}</td>
+        <td style="${cellStyle}">${escapeHTML(r.responsable)}</td>
+      </tr>`
+      )
+      .join("") ||
+    `<tr><td colspan="5" style="${cellStyle}text-align:center;color:#94a3b8;">Sin insumos utilizados registrados en esta fecha.</td></tr>`;
 
   return `
     <div style="padding:12px 20px 4px;font-family:Arial,Helvetica,sans-serif;color:#1e293b;">
@@ -196,5 +219,121 @@ function buildListaDiariaBodyHTML(fechaFmt, pacientesDia, counts) {
         </thead>
         <tbody>${rows}</tbody>
       </table>
+
+      <h3 style="font-size:12px;margin:18px 0 6px;">Insumos utilizados</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:10px;">
+        <thead>
+          <tr>
+            <th style="${headStyle}">#</th>
+            <th style="${headStyle}">Insumo</th>
+            <th style="${headStyle}">Almacén</th>
+            <th style="${headStyle}">Cantidad</th>
+            <th style="${headStyle}">Responsable</th>
+          </tr>
+        </thead>
+        <tbody>${insumosRows}</tbody>
+      </table>
     </div>`;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Insumos utilizados el día de hoy (débito automático de inventario)      */
+/* ---------------------------------------------------------------------- */
+const MOTIVO_USO_DIARIO = "Uso operativo / Consumo";
+let insumosUsados = [];
+
+function setupInsumosUsados() {
+  const form = document.getElementById("form-insumo-usado");
+  if (!form) return;
+
+  const fechaField = form.elements["fecha"];
+  const respField = form.elements["responsable"];
+  if (fechaField) fechaField.value = new Date().toLocaleDateString("en-CA");
+  if (respField) respField.value = getResponsableLabel();
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const insumoSelect = form.elements["insumoId"];
+    const insumoOpt = insumoSelect.options[insumoSelect.selectedIndex];
+    const almacen = form.elements["almacenOrigen"].value;
+    const cantidad = Number(form.elements["cantidad"].value);
+    const responsable = form.elements["responsable"].value.trim();
+    const fecha = form.elements["fecha"].value;
+
+    if (!insumoOpt?.value || !almacen || !cantidad || cantidad <= 0) {
+      toast("Complete insumo, almacén y una cantidad válida.", "error");
+      return;
+    }
+
+    try {
+      await registrarDebito({
+        insumoId: insumoOpt.value,
+        insumoNombre: insumoOpt.dataset.nombre,
+        almacen,
+        cantidad,
+        motivo: MOTIVO_USO_DIARIO,
+        responsable,
+        observaciones: "Insumo utilizado — Lista Diaria de Pacientes",
+        fecha,
+      });
+      toast("Insumo utilizado registrado y descontado del inventario.", "success");
+      form.reset();
+      if (fechaField) fechaField.value = new Date().toLocaleDateString("en-CA");
+      if (respField) respField.value = getResponsableLabel();
+    } catch (err) {
+      console.error(err);
+      toast(err.message || "No se pudo registrar el insumo utilizado.", "error");
+    }
+  });
+
+  subscribeCollection(COLLECTIONS.DEBITOS_INVENTARIO, "fecha", (rows) => {
+    insumosUsados = rows;
+    renderInsumosUsadosTable();
+  });
+}
+
+function renderInsumosUsadosTable() {
+  const root = document.getElementById("tabla-insumos-usados");
+  if (!root) return;
+  const hoy = new Date().toLocaleDateString("en-CA");
+  const rows = insumosUsados.filter(
+    (r) => r.motivo === MOTIVO_USO_DIARIO && toDate(r.fecha)?.toLocaleDateString("en-CA") === hoy
+  );
+  const admin = isAdmin();
+
+  root.innerHTML = `
+    <table class="min-w-full text-sm">
+      <thead class="bg-slate-50 text-slate-600">
+        <tr>
+          <th class="text-left font-medium px-3 py-1.5">Insumo</th>
+          <th class="text-left font-medium px-3 py-1.5">Almacén</th>
+          <th class="text-left font-medium px-3 py-1.5">Cantidad</th>
+          <th class="text-left font-medium px-3 py-1.5">Responsable</th>
+          <th class="text-left font-medium px-3 py-1.5 no-print">Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${
+          rows
+            .map(
+              (r) => `
+          <tr class="border-t border-slate-100">
+            <td class="px-3 py-1.5">${escapeHTML(r.insumoNombre)}</td>
+            <td class="px-3 py-1.5">${escapeHTML(r.almacenOrigen)}</td>
+            <td class="px-3 py-1.5">${r.cantidad}</td>
+            <td class="px-3 py-1.5">${escapeHTML(r.responsable)}</td>
+            <td class="px-3 py-1.5 no-print">${admin ? `<button data-id="${r.id}" data-act="del" class="text-red-700 hover:underline">Eliminar</button>` : "—"}</td>
+          </tr>`
+            )
+            .join("") ||
+          `<tr><td colspan="5" class="px-3 py-4 text-center text-slate-400">Sin insumos utilizados registrados hoy.</td></tr>`
+        }
+      </tbody>
+    </table>`;
+
+  if (admin) {
+    root.querySelectorAll('[data-act="del"]').forEach((btn) => {
+      btn.onclick = () => deleteDebito(rows.find((r) => r.id === btn.dataset.id));
+    });
+  }
 }
