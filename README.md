@@ -142,10 +142,28 @@ funcionalidad.
 
 Todo historial y el Resumen General cuentan con botones **Imprimir /
 Excel / PDF**. La impresión usa `@media print` (`css/styles.css`) con
-cintillo institucional y espacios de firma ("Firma del Responsable" /
-"Firma del Departamento") en formato carta, listos para archivo físico.
+cintillo institucional y espacios de firma (cargo/departamento
+configurable por módulo, ver `firmas` en `js/moduleFactory.js` y
+`js/ui.js`) en formato carta, listos para archivo físico.
 
-## 9. Personalización pendiente antes de producción
+## 9. Persistencia offline
+
+Firestore está configurado con caché local persistente (IndexedDB,
+`js/firebase.js`), compartida entre pestañas abiertas
+(`persistentMultipleTabManager`). Si se pierde la conexión a internet:
+
+- La app sigue mostrando los datos ya sincronizados.
+- Los formularios se pueden seguir guardando: las escrituras quedan
+  encoladas localmente y se envían solas en cuanto vuelve la señal.
+- Un indicador en la barra superior ("🔴 Sin conexión — guardando
+  localmente") avisa el estado; desaparece unos segundos después de
+  reconectar.
+
+Si el navegador no soporta IndexedDB (p. ej. algunos modos privados),
+la app cae automáticamente a Firestore en memoria — sigue funcionando,
+solo sin caché offline.
+
+## 10. Personalización pendiente antes de producción
 
 - Reemplazar `icons/icon.svg` por el escudo oficial de Protección Civil (y opcionalmente generar PNGs 192x192/512x512 si su plataforma de instalación lo requiere).
 - Ajustar `INSTITUCION` en `js/config.js` (nombre exacto del organismo/regional).

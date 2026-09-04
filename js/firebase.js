@@ -18,6 +18,9 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js";
 import {
   getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   collection,
   doc,
   addDoc,
@@ -39,7 +42,30 @@ import {
 // App principal (sesión del usuario autenticado en la UI).
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+
+/**
+ * Firestore con persistencia offline (IndexedDB): la app sigue funcionando
+ * sin conexión — puede leer los datos ya sincronizados y encolar
+ * creaciones/ediciones, que se envían solas en cuanto vuelve internet. Es
+ * crítico para Protección Civil: una emergencia no espera a que vuelva la
+ * señal. `persistentMultipleTabManager` permite tener la app abierta en
+ * varias pestañas/ventanas compartiendo el mismo caché local.
+ *
+ * Si el navegador no soporta IndexedDB (modo privado en algunos
+ * navegadores, versiones muy antiguas), se cae de forma segura a Firestore
+ * en memoria: la app sigue funcionando igual, solo sin caché offline.
+ */
+function createFirestore() {
+  try {
+    return initializeFirestore(app, {
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+    });
+  } catch (err) {
+    console.warn("No se pudo habilitar la persistencia offline de Firestore; se usará solo memoria.", err);
+    return getFirestore(app);
+  }
+}
+export const db = createFirestore();
 
 // App secundaria: se usa exclusivamente para que un administrador pueda
 // crear cuentas de nuevos usuarios (Operador/Administrador) sin que la

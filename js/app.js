@@ -10,6 +10,7 @@
  */
 import { initAuth, onAuthReady, login, logout, isAdmin, getCurrentProfile } from "./auth.js";
 import { initRouter, registerView, navigateTo } from "./router.js";
+import { toast } from "./ui.js";
 
 import { initCatalogos } from "./catalogos.js";
 import { initDashboard, refreshDashboard } from "./dashboard.js";
@@ -101,9 +102,45 @@ function wireLogout() {
   });
 }
 
+/**
+ * Indicador de conectividad. La app sigue funcionando sin internet gracias
+ * a la persistencia offline de Firestore (ver firebase.js): los datos ya
+ * sincronizados se pueden seguir consultando y lo que se guarde queda
+ * encolado y se envía solo al reconectar. Este indicador solo avisa el
+ * estado — no bloquea nada.
+ */
+function updateConnStatus(isOnline) {
+  const el = document.getElementById("conn-status");
+  if (!el) return;
+  el.classList.remove("hidden");
+  el.classList.toggle("flex", true);
+  if (isOnline) {
+    // Vuelve a un estado neutro/oculto tras avisar brevemente que sincronizó.
+    el.className = "flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-100";
+    el.textContent = "🟢 En línea";
+    setTimeout(() => el.classList.add("hidden"), 4000);
+  } else {
+    el.className = "flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-red-500/90 text-white animate-pulse";
+    el.textContent = "🔴 Sin conexión — guardando localmente";
+  }
+}
+
+function wireConnectivity() {
+  window.addEventListener("offline", () => {
+    updateConnStatus(false);
+    toast("Se perdió la conexión a internet. Puede seguir trabajando: los cambios se guardan localmente y se sincronizan al reconectar.", "warning");
+  });
+  window.addEventListener("online", () => {
+    updateConnStatus(true);
+    toast("Conexión restablecida. Sincronizando los cambios pendientes...", "success");
+  });
+  if (!navigator.onLine) updateConnStatus(false);
+}
+
 function boot() {
   wireLoginForm();
   wireLogout();
+  wireConnectivity();
   registerRoutes();
 
   onAuthReady(({ user, profile }) => {
