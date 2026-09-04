@@ -255,7 +255,7 @@ export function printHeaderHTML(subtitle) {
   const fecha = new Date().toLocaleString("es-VE");
   return `
     <div class="print-letterhead">
-      <div class="print-letterhead-crest">🛡️</div>
+      <img class="print-letterhead-crest" src="./icons/icon.svg" alt="Escudo de Protección Civil" />
       <div>
         <div class="print-letterhead-title">${INSTITUCION.nombre}</div>
         <div class="print-letterhead-sub">${INSTITUCION.sistema}</div>
@@ -336,20 +336,51 @@ export function exportToExcel(filename, columns, rows) {
   window.XLSX.writeFile(wb, `${sanitizeFilename(filename)}.xlsx`);
 }
 
-export function exportToPDF(title, columns, rows) {
+// Carga perezosa (y en caché) del escudo institucional como data URL, para
+// poder incrustarlo en los PDF generados con jsPDF (que no soporta SVG
+// directamente, solo imágenes ráster).
+let crestDataUrlPromise = null;
+function getCrestDataUrl() {
+  if (!crestDataUrlPromise) {
+    crestDataUrlPromise = new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+          canvas.getContext("2d").drawImage(img, 0, 0);
+          resolve(canvas.toDataURL("image/png"));
+        } catch (err) {
+          console.warn("No se pudo preparar el escudo para el PDF:", err);
+          resolve(null);
+        }
+      };
+      img.onerror = () => resolve(null);
+      img.src = "./icons/icon-192.png";
+    });
+  }
+  return crestDataUrlPromise;
+}
+
+export async function exportToPDF(title, columns, rows) {
   const { jsPDF } = window.jspdf || {};
   if (!jsPDF) {
     toast("Librería de PDF no disponible.", "error");
     return;
   }
   const docPdf = new jsPDF({ orientation: "landscape" });
+  const crest = await getCrestDataUrl();
+  const textX = crest ? 26 : 14;
+  if (crest) docPdf.addImage(crest, "PNG", 12, 8, 16, 16);
   docPdf.setFontSize(13);
-  docPdf.text(INSTITUCION.nombre, 14, 14);
+  docPdf.text(INSTITUCION.nombre, textX, 14);
   docPdf.setFontSize(9);
-  docPdf.text(`${INSTITUCION.sistema} — ${title}`, 14, 20);
-  docPdf.text(`Generado: ${new Date().toLocaleString("es-VE")}`, 14, 25);
+  docPdf.text(`${INSTITUCION.sistema} — ${title}`, textX, 20);
+  docPdf.text(`Generado: ${new Date().toLocaleString("es-VE")}`, textX, 25);
   docPdf.autoTable({
-    startY: 30,
+    startY: 32,
     head: [columns.map((c) => c.label)],
     body: rows.map((row) => columns.map((c) => String(c.format ? c.format(row) : row[c.key] ?? ""))),
     styles: { fontSize: 8 },
