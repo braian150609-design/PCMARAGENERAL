@@ -165,6 +165,13 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    match /debitosInventario/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isKnownUser() && isOwnCreation();
+      allow update: if false; // movimiento inmutable; solo se permite eliminar (con reversión) por admin
+      allow delete: if isAdmin();
+    }
+
     /* ------------------------------ Config -------------------------------- */
     match /config/{docId} {
       allow read: if isSignedIn();

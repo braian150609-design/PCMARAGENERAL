@@ -10,15 +10,19 @@
  *  - insumoStock/{insumoId__almacen} → existencia y mínimo crítico POR insumo y POR almacén
  *  - entradasInventario/{id} → ingresos (donación/compra) hacia un almacén
  *  - transferenciasInventario/{id} → movimientos entre dos almacenes
+ *  - debitosInventario/{id} → salidas/consumo de un almacén (uso operativo,
+ *    vencimiento, daño, donación saliente, etc.) — a diferencia de una
+ *    transferencia, el insumo sale del sistema por completo, no se mueve a
+ *    otro almacén.
  *
- * Las entradas y transferencias actualizan `insumoStock` de forma atómica
- * mediante transacciones de Firestore para evitar condiciones de carrera
- * cuando varios operadores registran movimientos simultáneamente.
+ * Las entradas, transferencias y débitos actualizan `insumoStock` de forma
+ * atómica mediante transacciones de Firestore para evitar condiciones de
+ * carrera cuando varios operadores registran movimientos simultáneamente.
  *
  * Nota de diseño: por tratarse de movimientos de existencias (no de datos
- * descriptivos), la edición de una entrada/transferencia ya registrada no
- * está disponible ni para el administrador, ya que alteraría el historial
- * de trazabilidad de las cantidades. El administrador sí puede ELIMINAR un
+ * descriptivos), la edición de un movimiento ya registrado no está
+ * disponible ni para el administrador, ya que alteraría el historial de
+ * trazabilidad de las cantidades. El administrador sí puede ELIMINAR un
  * movimiento; al hacerlo, el sistema revierte automáticamente el efecto
  * sobre las existencias para mantener la consistencia del stock.
  * -----------------------------------------------------------------------
@@ -32,7 +36,7 @@ import {
   addDoc,
   updateDoc,
 } from "./firebase.js";
-import { COLLECTIONS, ALMACENES } from "./config.js";
+import { COLLECTIONS, ALMACENES, MOTIVOS_DEBITO_INVENTARIO } from "./config.js";
 import { subscribeCollection, createRecord, deleteRecord } from "./data.js";
 import { getCategoriasInsumos, onCategoriasInsumosChange } from "./catalogos.js";
 import { toast, confirmDialog, createHistorial, formatDate, parseLocalDate } from "./ui.js";
@@ -42,6 +46,7 @@ let insumos = [];
 let stock = []; // filas de insumoStock
 let entradas = [];
 let transferencias = [];
+let debitos = [];
 
 function stockDocId(insumoId, almacen) {
   return `${insumoId}__${encodeURIComponent(almacen)}`;
@@ -66,9 +71,11 @@ export function initInventario() {
   });
 
   populateAlmacenSelects();
+  populateMotivoDebitoSelect();
   setupInsumoForm();
   setupEntradaForm();
   setupTransferenciaForm();
+  setupDebitoForm();
 
   subscribeCollection(COLLECTIONS.INSUMOS, "nombre", (rows) => {
     insumos = rows;
@@ -89,6 +96,11 @@ export function initInventario() {
   transferenciasHistorial = subscribeCollection(COLLECTIONS.TRANSFERENCIAS_INVENTARIO, "fecha", (rows) => {
     transferencias = rows;
     transferenciasHistorialCmp.render();
+  });
+
+  debitosHistorial = subscribeCollection(COLLECTIONS.DEBITOS_INVENTARIO, "fecha", (rows) => {
+    debitos = rows;
+    debitosHistorialCmp.render();
   });
 
   entradasHistorialCmp = createHistorial({
@@ -126,11 +138,30 @@ export function initInventario() {
     onDelete: (row) => deleteTransferencia(row),
   });
 
+  debitosHistorialCmp = createHistorial({
+    root: document.getElementById("historial-debitos"),
+    title: "Historial de Débitos (Salidas) de Inventario",
+    columns: [
+      { key: "fecha", label: "Fecha", format: (r) => formatDate(r.fecha) },
+      { key: "insumoNombre", label: "Insumo" },
+      { key: "almacenOrigen", label: "Almacén" },
+      { key: "cantidad", label: "Cantidad" },
+      { key: "motivo", label: "Motivo" },
+      { key: "responsable", label: "Responsable" },
+    ],
+    dateField: "fecha",
+    getRows: () => debitos,
+    isAdmin,
+    exportFileName: "Debitos_Inventario",
+    onDelete: (row) => deleteDebito(row),
+  });
+
   onCategoriasInsumosChange(() => populateCategoriaInsumoSelect());
   populateCategoriaInsumoSelect();
 }
 
-let entradasHistorial, transferenciasHistorial, entradasHistorialCmp, transferenciasHistorialCmp;
+let entradasHistorial, transferenciasHistorial, debitosHistorial;
+let entradasHistorialCmp, transferenciasHistorialCmp, debitosHistorialCmp;
 
 /* --------------------------- Selects auxiliares ------------------------ */
 
@@ -143,6 +174,13 @@ function populateAlmacenSelects() {
     filtroAlmacen.innerHTML = `<option value="">Todos los almacenes</option>` + ALMACENES.map((a) => `<option value="${a}">${a}</option>`).join("");
     filtroAlmacen.addEventListener("change", renderStockTable);
   }
+}
+
+function populateMotivoDebitoSelect() {
+  document.querySelectorAll("select.select-motivo-debito").forEach((sel) => {
+    sel.innerHTML =
+      `<option value="">Seleccione motivo...</option>` + MOTIVOS_DEBITO_INVENTARIO.map((m) => `<option value="${m}">${m}</option>`).join("");
+  });
 }
 
 function populateCategoriaInsumoSelect() {
@@ -483,5 +521,104 @@ async function deleteTransferencia(row) {
   } catch (err) {
     console.error(err);
     toast("No se pudo eliminar la transferencia.", "error");
+  }
+}
+
+/* ------------------------------- Débitos ---------------------------------- */
+/* Salida/consumo de un insumo: el insumo sale del sistema (no se mueve a    */
+/* otro almacén, a diferencia de una transferencia).                        */
+
+function setupDebitoForm() {
+  const form = document.getElementById("form-debito");
+  if (!form) return;
+  const respField = form.elements["responsable"];
+  if (respField) respField.value = getResponsableLabel();
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const insumoSelect = form.elements["insumoId"];
+    const insumoOpt = insumoSelect.options[insumoSelect.selectedIndex];
+    const almacen = form.elements["almacenOrigen"].value;
+    const cantidad = Number(form.elements["cantidad"].value);
+    const motivo = form.elements["motivo"].value;
+    const responsable = form.elements["responsable"].value.trim();
+    const observaciones = form.elements["observaciones"]?.value || "";
+    const fecha = form.elements["fecha"].value;
+
+    if (!insumoOpt?.value || !almacen || !motivo || !cantidad || cantidad <= 0) {
+      toast("Complete insumo, almacén, motivo y una cantidad válida.", "error");
+      return;
+    }
+
+    try {
+      await registrarDebito({
+        insumoId: insumoOpt.value,
+        insumoNombre: insumoOpt.dataset.nombre,
+        almacen,
+        cantidad,
+        motivo,
+        responsable,
+        observaciones,
+        fecha,
+      });
+      toast("Débito registrado y existencia actualizada.", "success");
+      form.reset();
+      if (respField) respField.value = getResponsableLabel();
+    } catch (err) {
+      console.error(err);
+      toast(err.message || "No se pudo registrar el débito.", "error");
+    }
+  });
+}
+
+async function registrarDebito({ insumoId, insumoNombre, almacen, cantidad, motivo, responsable, observaciones, fecha }) {
+  const stockId = stockDocId(insumoId, almacen);
+
+  await runTransaction(db, async (tx) => {
+    const stockRef = doc(db, COLLECTIONS.INSUMO_STOCK, stockId);
+    const stockSnap = await tx.get(stockRef);
+    const existenciaActual = stockSnap.exists() ? Number(stockSnap.data().existencia) || 0 : 0;
+    if (existenciaActual < cantidad) {
+      throw new Error(`Existencia insuficiente en ${almacen}. Disponible: ${existenciaActual}.`);
+    }
+    tx.update(stockRef, { existencia: existenciaActual - cantidad, updatedAt: serverTimestamp() });
+  });
+
+  const user = getCurrentUser();
+  await addDoc(collection(db, COLLECTIONS.DEBITOS_INVENTARIO), {
+    insumoId,
+    insumoNombre,
+    almacenOrigen: almacen,
+    cantidad,
+    motivo,
+    responsable,
+    observaciones,
+    fecha: fecha ? parseLocalDate(fecha) : new Date(),
+    createdAt: serverTimestamp(),
+    createdBy: user?.uid || null,
+    createdByEmail: user?.email || null,
+  });
+}
+
+async function deleteDebito(row) {
+  if (!row) return;
+  const ok = await confirmDialog({
+    title: "Eliminar débito",
+    message: `Se eliminará la salida de ${row.cantidad} unidad(es) de "${row.insumoNombre}" y se restituirá la existencia en ${row.almacenOrigen}. ¿Continuar?`,
+  });
+  if (!ok) return;
+  try {
+    const stockId = stockDocId(row.insumoId, row.almacenOrigen);
+    await runTransaction(db, async (tx) => {
+      const stockRef = doc(db, COLLECTIONS.INSUMO_STOCK, stockId);
+      const stockSnap = await tx.get(stockRef);
+      const existenciaActual = stockSnap.exists() ? Number(stockSnap.data().existencia) || 0 : 0;
+      tx.set(stockRef, { existencia: existenciaActual + Number(row.cantidad), updatedAt: serverTimestamp() }, { merge: true });
+    });
+    await deleteRecord(COLLECTIONS.DEBITOS_INVENTARIO, row.id);
+    toast("Débito eliminado y existencia restituida.", "success");
+  } catch (err) {
+    console.error(err);
+    toast("No se pudo eliminar el débito.", "error");
   }
 }

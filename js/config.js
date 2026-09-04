@@ -47,6 +47,7 @@ export const COLLECTIONS = {
   INSUMO_STOCK: "insumoStock",
   ENTRADAS_INVENTARIO: "entradasInventario",
   TRANSFERENCIAS_INVENTARIO: "transferenciasInventario",
+  DEBITOS_INVENTARIO: "debitosInventario",
   CIERRES_DIARIOS: "cierresDiarios",
 };
 
@@ -82,6 +83,15 @@ export const NIVEL_HIDRO_MAX = 9;
 
 // Tipos de combustible fijos para el módulo de Despacho de Combustible.
 export const TIPOS_COMBUSTIBLE = ["Gasolina", "Gasoil"];
+
+// Motivos fijos para un débito (salida/consumo) de inventario.
+export const MOTIVOS_DEBITO_INVENTARIO = [
+  "Uso operativo / Consumo",
+  "Vencimiento",
+  "Daño / Pérdida",
+  "Donación saliente",
+  "Otro",
+];
 
 // Datos institucionales usados en encabezados de pantalla e impresión.
 export const INSTITUCION = {

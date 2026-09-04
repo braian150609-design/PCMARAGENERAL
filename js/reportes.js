@@ -135,6 +135,19 @@ const REPORTS = {
       { key: "responsable", label: "Responsable" },
     ],
   },
+  debitosInventario: {
+    label: "Inventario — Débitos",
+    collection: COLLECTIONS.DEBITOS_INVENTARIO,
+    dateField: "fecha",
+    columns: [
+      { key: "fecha", label: "Fecha", format: (r) => formatDate(r.fecha) },
+      { key: "insumoNombre", label: "Insumo" },
+      { key: "almacenOrigen", label: "Almacén" },
+      { key: "cantidad", label: "Cantidad" },
+      { key: "motivo", label: "Motivo" },
+      { key: "responsable", label: "Responsable" },
+    ],
+  },
 };
 
 const dataCache = {}; // collectionName -> rows[]
@@ -243,6 +256,7 @@ function computeCierreCounts(dateStr) {
   const inspeccion = (dataCache[COLLECTIONS.INSPECCIONES] || []).filter((r) => sameDate(r, "fecha", dateStr));
   const entradas = (dataCache[COLLECTIONS.ENTRADAS_INVENTARIO] || []).filter((r) => sameDate(r, "fecha", dateStr));
   const transferencias = (dataCache[COLLECTIONS.TRANSFERENCIAS_INVENTARIO] || []).filter((r) => sameDate(r, "fecha", dateStr));
+  const debitos = (dataCache[COLLECTIONS.DEBITOS_INVENTARIO] || []).filter((r) => sameDate(r, "fecha", dateStr));
 
   return {
     pacientesTotal: pacientes.length,
@@ -258,6 +272,7 @@ function computeCierreCounts(dateStr) {
     inspeccion: inspeccion.length,
     entradasInventario: entradas.length,
     transferenciasInventario: transferencias.length,
+    debitosInventario: debitos.length,
   };
 }
 
@@ -284,6 +299,7 @@ function buildCierreBodyHTML(fechaFmt, c) {
           ${row("Gestión de Riesgo (inspecciones)", c.inspeccion)}
           ${row("Inventario — entradas", c.entradasInventario)}
           ${row("Inventario — transferencias", c.transferenciasInventario)}
+          ${row("Inventario — débitos", c.debitosInventario)}
         </tbody>
       </table>
     </div>`;

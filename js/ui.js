@@ -270,7 +270,7 @@ export function printFooterHTML(firmas) {
           (label) => `
       <div class="print-signature">
         <div class="print-signature-line"></div>
-        <div>Firma del ${label}</div>
+        <div>${label}</div>
       </div>`
         )
         .join("")}

@@ -373,6 +373,7 @@
           <button class="subtab-btn" data-subtab="catalogo">Catálogo de Insumos</button>
           <button class="subtab-btn" data-subtab="entradas">Entradas</button>
           <button class="subtab-btn" data-subtab="transferencias">Transferencias</button>
+          <button class="subtab-btn" data-subtab="debitos">Débitos</button>
         </div>
 
         <div id="panel-existencias" class="subtab-panel space-y-3">
@@ -444,6 +445,23 @@
             <div class="form-actions"><button type="submit" class="btn-primary">Registrar transferencia</button></div>
           </form>
           <div id="historial-transferencias"></div>
+        </div>
+
+        <div id="panel-debitos" class="subtab-panel hidden space-y-4">
+          <form id="form-debito" class="form-card">
+            <h3 class="font-semibold text-slate-700 mb-2">Registrar débito (salida / consumo)</h3>
+            <div class="form-grid">
+              <div><label class="form-label">Fecha</label><input required type="date" name="fecha" class="form-input" /></div>
+              <div><label class="form-label">Insumo</label><select required name="insumoId" class="form-input select-insumo"></select></div>
+              <div><label class="form-label">Almacén</label><select required name="almacenOrigen" class="form-input select-almacen"></select></div>
+              <div><label class="form-label">Cantidad</label><input required type="number" min="1" name="cantidad" class="form-input" /></div>
+              <div><label class="form-label">Motivo</label><select required name="motivo" class="form-input select-motivo-debito"></select></div>
+              <div><label class="form-label">Responsable</label><input required type="text" name="responsable" class="form-input" /></div>
+              <div class="md:col-span-3"><label class="form-label">Observaciones</label><textarea name="observaciones" class="form-input" rows="2"></textarea></div>
+            </div>
+            <div class="form-actions"><button type="submit" class="btn-primary">Registrar débito</button></div>
+          </form>
+          <div id="historial-debitos"></div>
         </div>
       </section>
 
